@@ -20,7 +20,7 @@ plugins:
     - "https://raw.githubusercontent.com/Osyna/CPMAC-Plugins/main/registry.json"
 ```
 
-Then open **Plugins → Store** in the management UI and install `quota-ledger` and `token-trim`. The plugins land in the plugins folder, so they survive image updates as long as that folder is a mounted volume (see below). Each release zip is checked against the SHA-256 pinned in `registry.json`.
+Then open the **Plugin Store** page in the management UI and install `quota-ledger` and `token-trim`. The plugins land in the plugins folder, so they survive image updates as long as that folder is a mounted volume (see below). Each release zip is checked against the SHA-256 pinned in `registry.json`.
 
 ## Build from source
 
