@@ -9,7 +9,20 @@ Two [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) plugins (Go, bui
 
 Each folder has its own README with the routes, every config field and the on-disk data layout.
 
-## Install
+## Install from the plugin store
+
+Linux amd64 builds are published as releases. Add this repo as an extra store source in `config.yaml`:
+
+```yaml
+plugins:
+  enabled: true
+  store-sources:
+    - "https://raw.githubusercontent.com/Osyna/CPMAC-Plugins/main/registry.json"
+```
+
+Then open **Plugins → Store** in the management UI and install `quota-ledger` and `token-trim`. The plugins land in the plugins folder, so they survive image updates as long as that folder is a mounted volume (see below). Each release zip is checked against the SHA-256 pinned in `registry.json`.
+
+## Build from source
 
 You need the CLIProxyAPI Docker setup (`eceasy/cli-proxy-api`), Docker, and Linux. The plugins are built in Debian bookworm so their glibc matches that image.
 

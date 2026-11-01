@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "plugins": [
+    {
+      "id": "quota-ledger",
+      "name": "Quota Ledger",
+      "description": "Quota page for Claude, Codex and OpenCode Go with history, alerts and quota-aware routing.",
+      "author": "Osyna",
+      "version": "0.3.0",
+      "repository": "Osyna/CPMAC-Plugins",
+      "homepage": "https://github.com/Osyna/CPMAC-Plugins/tree/main/quota-ledger",
+      "license": "MIT",
+      "tags": [
+        "quota",
+        "routing",
+        "alerts"
+      ],
+      "install": {
+        "type": "direct",
+        "artifacts": [
+          {
+            "goos": "linux",
+            "goarch": "amd64",
+            "url": "https://github.com/Osyna/CPMAC-Plugins/releases/download/quota-ledger-v0.3.0/quota-ledger_0.3.0_linux_amd64.zip",
+            "sha256": "a9c6efa181a0c0bc4e2572bd0e129366038f3d10fab2e6c1712bfa1973e0170c",
+            "size": 3115253
+          }
+        ]
+      }
+    },
+    {
+      "id": "token-trim",
+      "name": "Token Trim",
+      "description": "Shortens tool outputs before they go upstream and shows token use, cost, prompt-cache behaviour and reply speed.",
+      "author": "Osyna",
+      "version": "0.4.0",
+      "repository": "Osyna/CPMAC-Plugins",
+      "homepage": "https://github.com/Osyna/CPMAC-Plugins/tree/main/token-trim",
+      "license": "MIT",
+      "tags": [
+        "tokens",
+        "cost",
+        "cache"
+      ],
+      "install": {
+        "type": "direct",
+        "artifacts": [
+          {
+            "goos": "linux",
+            "goarch": "amd64",
+            "url": "https://github.com/Osyna/CPMAC-Plugins/releases/download/token-trim-v0.4.0/token-trim_0.4.0_linux_amd64.zip",
+            "sha256": "f8ac7a19029044c89b401d83676575ab7063c56c92a7ad6d45417ad7bfc398a3",
+            "size": 2105208
+          }
+        ]
+      }
+    }
+  ]
+}
