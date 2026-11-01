@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Trim</title>
+<style>
+/* Tokens copied from CPAMC src/styles/themes.scss so the iframe matches the host UI. */
+:root {
+  --bg-page: #faf9f5; --bg-card: #f0eee8; --bg-hover: #e9e6df; --track: #e3e1db;
+  --text-1: #2d2a26; --text-2: #6d6760; --text-3: #a29c95;
+  --border: #e3e1db; --border-strong: #d5d2cb;
+  --green: #10b981; --teal: #0e9488; --yellow: #e0aa14; --red: #c65746; --warn: #a8710a;
+  --btn-bg: #2d2a26; --btn-text: #ffffff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 8px 24px -12px rgba(0, 0, 0, .12);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+}
+[data-theme='white'] { --bg-page: #ffffff; --bg-card: #ffffff; --bg-hover: #f6f6f6; --border: #e5e5e5; --border-strong: #d9d9d9; --track: #ececec; }
+[data-theme='dark'] {
+  --bg-page: #151412; --bg-card: #1d1b18; --bg-hover: #262320; --track: #3a3530;
+  --text-1: #f6f4f1; --text-2: #c9c3bb; --text-3: #9c958d;
+  --border: #3a3530; --border-strong: #4a453f; --teal: #2dd4bf;
+  --yellow: #ffd862; --warn: #ffd862; --btn-bg: #f6f4f1; --btn-text: #151412;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 10px 28px -14px rgba(0, 0, 0, .6);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg-page); color: var(--text-1); font-family: var(--sans); -webkit-font-smoothing: antialiased; line-height: 1.5; }
+button { font: inherit; color: inherit; cursor: pointer; }
+main { padding: 32px clamp(20px, 3vw, 48px) 64px; max-width: 2200px; }
+.head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+h2 { margin: 0; font-size: 16px; font-weight: 650; }
+.meta { margin-top: 8px; font-family: var(--mono); font-size: 14px; color: var(--text-2); border-left: 3px solid var(--teal); padding-left: 14px; }
+.actions { display: flex; gap: 10px; align-items: center; padding-top: 8px; flex-wrap: wrap; }
+.embedded .actions { margin-right: 170px; } /* clear CPAMC's floating toolbar over the iframe */
+@media (max-width: 700px) { .embedded .actions { margin-right: 0; } }
+.btn { border: 1px solid var(--border-strong); background: transparent; border-radius: 999px; padding: 7px 16px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; transition-property: background-color, transform; transition-duration: 150ms; transition-timing-function: ease-out; }
+.btn:hover { background: var(--bg-hover); }
+.btn:active { transform: scale(0.97); }
+.btn.primary { background: var(--btn-bg); color: var(--btn-text); border-color: var(--btn-bg); font-weight: 600; }
+.btn.small { padding: 4px 12px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: default; }
+select, textarea { font: inherit; font-size: 13px; color: var(--text-1); background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; }
+.muted { color: var(--text-3); font-size: 13px; }
+.hint { color: var(--text-3); font-size: 12px; line-height: 1.5; }
+.hint b { color: var(--text-2); font-weight: 600; }
+.err { color: var(--red); font-size: 13px; }
+.surface { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; margin-top: 24px; align-items: start; }
+@media (min-width: 1240px) { .layout { grid-template-columns: minmax(0, 1fr) clamp(320px, 26vw, 440px); } }
+.main-col, .side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.card { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+.card > header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px 12px; flex-wrap: wrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; line-height: 1.6; padding: 0 9px; border-radius: 999px; background: var(--bg-hover); color: var(--text-2); white-space: nowrap; }
+.pill.dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.ok { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
+.pill.warn { color: var(--warn); background: color-mix(in srgb, var(--yellow) 20%, transparent); }
+.pill.off { color: var(--text-3); }
+
+/* mode switch */
+.seg { display: inline-flex; background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
+.seg button { border: 0; background: none; padding: 5px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--text-2); transition-property: background-color, color; transition-duration: 150ms; }
+.seg button.on { background: var(--btn-bg); color: var(--btn-text); }
+.seg button:disabled { cursor: default; }
+
+.banner { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; padding: 14px 18px; border-radius: 14px; margin-top: 22px; font-size: 14px; line-height: 1.5; text-wrap: pretty; }
+.banner.measure { background: color-mix(in srgb, var(--yellow) 14%, transparent); border: 1px solid color-mix(in srgb, var(--yellow) 35%, transparent); }
+.banner.off { background: var(--bg-hover); border: 1px solid var(--border); }
+.banner b { font-weight: 650; }
+
+/* tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+.tile { padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tile .k { font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
+.tile .v { font-size: 30px; font-weight: 750; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.tile .v small { font-size: 14px; font-weight: 600; color: var(--text-2); margin-left: 4px; letter-spacing: 0; }
+.tile .s { font-size: 13px; color: var(--text-2); text-wrap: pretty; }
+.tile.hero .v { color: var(--teal); }
+
+/* chart */
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-3); }
+.legend i { display: inline-block; width: 10px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+
+/* consumption */
+.use-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .use-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .use-grid { grid-template-columns: minmax(0, 1fr); } }
+.tile.use { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-page); gap: 6px; }
+.split { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--track); margin-top: 4px; }
+.split-legend { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.split-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.live svg { display: block; width: 100%; height: 64px; }
+.live .axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); margin-top: 4px; }
+
+/* rules */
+.rules { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.rule { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-page); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.rule.disabled { opacity: .6; }
+.rule-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.rule-name { font-weight: 650; font-size: 14px; }
+.rule p { margin: 0; font-size: 13px; color: var(--text-2); text-wrap: pretty; }
+.rule .num { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.rule .num b { color: var(--text-1); }
+.share { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.share i { display: block; height: 100%; background: var(--teal); border-radius: 3px; }
+.switch { position: relative; width: 38px; height: 22px; flex: none; border: 0; border-radius: 999px; background: var(--track); padding: 0; transition: background-color 150ms ease-out; }
+.switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform 150ms ease-out; }
+.switch[aria-checked='true'] { background: var(--teal); }
+.switch[aria-checked='true']::after { transform: translateX(16px); }
+.switch:disabled { opacity: .5; cursor: default; }
+
+/* tables */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-size: 11.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--text-3); padding: 0 10px 8px 0; white-space: nowrap; }
+td { padding: 8px 10px 8px 0; border-top: 1px solid var(--border); vertical-align: top; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td .tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 6px; background: var(--bg-hover); color: var(--text-2); margin: 1px 4px 1px 0; }
+td .mono { font-family: var(--mono); font-size: 12px; }
+
+/* playground */
+textarea { width: 100%; min-height: 150px; resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.5; }
+pre.out { margin: 0; max-height: 260px; overflow: auto; font-family: var(--mono); font-size: 12px; line-height: 1.5; background: var(--bg-page); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+ul.safe { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 13px; color: var(--text-2); text-wrap: pretty; }
+ul.safe b { color: var(--text-1); }
+.login { margin-top: 40px; max-width: 420px; display: grid; gap: 12px; }
+.login input { font: inherit; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--bg-card); color: var(--text-1); }
+
+/* tabs, health strip, forms */
+.tabs { display: flex; gap: 2px; margin-top: 22px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tabs button { border: 0; background: none; padding: 8px 14px; font-size: 14px; font-weight: 600; color: var(--text-3); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; transition: color 150ms ease-out; }
+.tabs button:hover { color: var(--text-1); }
+.tabs button[aria-selected='true'] { color: var(--text-1); border-bottom-color: var(--teal); }
+@media (min-width: 1240px) { .layout.single { grid-template-columns: minmax(0, 1fr); } }
+.health { display: flex; gap: 8px; flex-wrap: wrap; }
+.pill.bad { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+.field { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+input.text, input.num { font: inherit; font-size: 13px; font-weight: 400; color: var(--text-1); background: var(--bg-page); border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px; min-width: 0; }
+input.num { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+td input.text { width: 100%; min-width: 180px; font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+const API = '/v0/management/token-trim/';
+const CONFIG = '/v0/management/plugins/token-trim/config';
+const CHARS_PER_TOKEN = 4; // shortcut: bytes ÷ 4 approximates tokens for English text and logs; no tokenizer
+const RULES = [
+  { id: 'ansi', name: 'Colour codes', what: 'Removes terminal colour and cursor escape codes. The model never needs them.' },
+  { id: 'progress', name: 'Progress bars', what: 'Lines redrawn with carriage returns keep only their final state, like a terminal shows it.' },
+  { id: 'overstrike', name: 'Overstrike', what: 'Backspace bold and underline (man pages, some build tools) is rendered the way a terminal shows it.' },
+  { id: 'control', name: 'Control characters', what: 'Characters a terminal never prints (NUL, bell, form feed…) are dropped.' },
+  { id: 'repeats', name: 'Repeated lines', what: 'A run of 12+ lines that differ only in numbers (timestamps, counters) keeps its first and last 2 lines. Line-numbered file reads are never touched.' },
+  { id: 'json', name: 'JSON whitespace', what: 'A tool output that is one pretty-printed JSON value is minified. Lossless.' },
+  { id: 'jsonl', name: 'JSON Lines', what: 'Output where every line is one JSON value is minified line by line. Lossless.' },
+  { id: 'dedupe', name: 'Duplicate outputs', what: 'A tool output identical to an earlier one in the conversation becomes a short reference to it.' },
+];
+const FORMAT_NAMES = { claude: 'Claude Messages', openai: 'OpenAI Chat', 'openai-response': 'OpenAI Responses' };
+const TABS = [['overview', 'Overview'], ['trimming', 'Trimming'], ['cache', 'Cache'], ['speed', 'Speed'], ['settings', 'Settings']];
+
+const state = { key: null, needKey: false, stats: null, error: '', days: 30, busy: '', preview: null, sample: '', tab: sessionStorage.getItem('token-trim:tab') || 'overview' };
+
+/* ---------- helpers ---------- */
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const tok = (bytes) => bytes / CHARS_PER_TOKEN;
+const compact = (n) => (n < 1e3 ? String(Math.round(n)) : n < 1e6 ? `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k` : n < 1e9 ? `${(n / 1e6).toFixed(n < 1e7 ? 2 : 1)}M` : `${(n / 1e9).toFixed(2)}B`);
+const pct = (a, b) => (b > 0 ? `${((a / b) * 100).toFixed(a / b < 0.1 ? 1 : 0)}%` : '—');
+const pad = (n) => String(n).padStart(2, '0');
+const when = (ms) => { const d = new Date(ms); return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const usd = (n) => (n < 0.01 ? '<$0.01' : n < 1000 ? `$${n.toFixed(2)}` : `$${compact(n)}`);
+// Sorted-key JSON, to compare settings sent with settings read back.
+const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
+function ago(ms) {
+  const min = Math.round((Date.now() - ms) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+}
+// Same matching as the plugin: case-insensitive, exact or by a prefix ending in "*".
+const matches = (pat, name) => (pat.endsWith('*') ? name.toLowerCase().startsWith(pat.slice(0, -1).toLowerCase()) : name.toLowerCase() === pat.toLowerCase());
+
+// CPAMC persists its auth store with reversible XOR obfuscation (src/utils/encryption.ts): enc::v2 salts
+// with the host, the older enc::v1 also with the user agent.
+// The key is only present when "remember password" was checked at login.
+function cpamcKey() {
+  try {
+    const raw = localStorage.getItem('cli-proxy-auth');
+    if (!raw) return null;
+    let text = raw;
+    const v = /^enc::v([12])::/.exec(raw);
+    if (v) {
+      const salt = new TextEncoder().encode(`cli-proxy-api-webui::secure-storage|${location.host}${v[1] === '1' ? `|${navigator.userAgent}` : ''}`);
+      const bin = atob(raw.slice(v[0].length));
+      text = new TextDecoder().decode(Uint8Array.from(bin, (c, i) => c.charCodeAt(0) ^ salt[i % salt.length]));
+    }
+    const parsed = JSON.parse(text);
+    return (parsed.state || parsed).managementKey || null;
+  } catch {
+    return null;
+  }
+}
+
+class AuthError extends Error {}
+async function mgmt(path, body, method = body ? 'POST' : 'GET') {
+  const res = await fetch(path, {
+    method,
+    headers: { Authorization: `Bearer ${state.key}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) throw new AuthError('Management key rejected');
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+  return res.json();
+}
+
+function requireKey() {
+  sessionStorage.removeItem('token-trim:key');
+  state.key = null;
+  state.needKey = true;
+  render();
+}
+
+async function load() {
+  try {
+    state.stats = await mgmt(`${API}stats?days=${state.days}`);
+    state.error = '';
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+    state.error = /HTTP 404/.test(err.message) ? `${err.message} — is the token-trim plugin loaded?` : err.message;
+  }
+  render();
+}
+
+// Settings live in config.yaml (plugins.configs.token-trim); CPA merges the change and hot-reloads the plugin.
+async function setConfig(patch, label) {
+  state.busy = label;
+  render();
+  try {
+    await mgmt(CONFIG, patch, 'PATCH');
+    const deadline = Date.now() + 12000;
+    const applied = (s) => Object.entries(patch).every(([k, v]) => (k === 'mode' ? s.settings.mode === v
+      : k.startsWith('rule_') ? s.settings.rules[k.slice(5)] === v : canon(s.settings[k] ?? null) === canon(v)));
+    do {
+      await new Promise((r) => setTimeout(r, 700));
+      await load();
+    } while (state.stats && !applied(state.stats) && Date.now() < deadline);
+    if (state.stats && !applied(state.stats)) state.error = 'The setting was saved but the plugin has not picked it up yet.';
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+    state.error = err.message;
+  }
+  state.busy = '';
+  render();
+}
+
+/* ---------- prices ---------- */
+
+function priceFor(model) {
+  const prices = state.stats.settings.prices || {};
+  let best = null, len = -1;
+  for (const [pat, p] of Object.entries(prices)) {
+    const exact = !pat.endsWith('*');
+    if (matches(pat, model) && (exact ? Infinity : pat.length) > len) { best = p; len = exact ? Infinity : pat.length; }
+  }
+  return best;
+}
+
+// Cost of a by-model usage map at the configured prices; null when no model has a price.
+function costOf(usage) {
+  let sum = 0, priced = false;
+  for (const [m, u] of Object.entries(usage || {})) {
+    const p = priceFor(m);
+    if (!p) continue;
+    priced = true;
+    sum += (u.input * (p.input || 0) + u.cache_read * (p.cache_read || 0) + u.cache_write * (p.cache_write || 0) + u.output * (p.output || 0)) / 1e6;
+  }
+  return priced ? sum : null;
+}
+
+// Value of trimmed bytes: new ones at the input price, re-sent ones at the cache-read price.
+function valueOf(models) {
+  let sum = 0, priced = false;
+  for (const [m, c] of Object.entries(models || {})) {
+    const p = priceFor(m);
+    if (!p) continue;
+    priced = true;
+    sum += (tok(c.new) * (p.input || 0) + tok(c.saved - c.new) * (p.cache_read || 0)) / 1e6;
+  }
+  return priced ? sum : null;
+}
+
+/* ---------- rendering ---------- */
+
+// Measure mode reports what would be removed; otherwise what was removed from requests sent.
+const figures = (d, measure) => (measure ? { all: d.would, fresh: d.new_would } : { all: d.saved, fresh: d.new_saved });
+
+function chart(days, applyMode, measure) {
+  const W = 1200, H = 220, top = 10, bottom = 26, left = 44;
+  const vals = days.map((d) => { const f = figures(d, measure); return { day: d.day, fresh: tok(f.fresh), resent: tok(f.all - f.fresh) }; });
+  const maxV = Math.max(1, ...vals.map((v) => v.fresh + v.resent));
+  const step = 10 ** Math.floor(Math.log10(maxV));
+  const ceil = Math.ceil(maxV / step) * step;
+  const bw = (W - left) / vals.length;
+  const y = (v) => top + (H - top - bottom) * (1 - v / ceil);
+  const grid = [0, 0.5, 1].map((f) => `<line x1="${left}" x2="${W}" y1="${y(ceil * f)}" y2="${y(ceil * f)}" stroke="var(--border)" stroke-dasharray="${f ? '3 4' : ''}"/><text x="${left - 8}" y="${y(ceil * f) + 4}" text-anchor="end" font-size="11" fill="var(--text-3)">${compact(ceil * f)}</text>`).join('');
+  const labelEvery = Math.ceil(vals.length / 8);
+  const bars = vals.map((v, i) => {
+    const x = left + i * bw + bw * 0.18, w = bw * 0.64;
+    const hNew = y(0) - y(v.fresh), hOld = y(0) - y(v.resent);
+    const tip = `${v.day}: ≈${compact(v.fresh + v.resent)} tokens ${applyMode ? 'saved' : 'trimmable'} (${compact(v.fresh)} new, ${compact(v.resent)} re-sent)`;
+    const last = vals.length - 1;
+    const show = i === last || (i % labelEvery === 0 && last - i >= labelEvery);
+    const label = show ? `<text x="${x + w / 2}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-3)">${v.day.slice(5)}</text>` : '';
+    return `<g><title>${esc(tip)}</title><rect x="${x}" y="${y(v.resent)}" width="${w}" height="${Math.max(0, hOld)}" rx="2" fill="color-mix(in srgb, var(--teal) 35%, transparent)"/><rect x="${x}" y="${y(v.resent) - hNew}" width="${w}" height="${Math.max(0, hNew)}" rx="2" fill="var(--teal)"/>${label}</g>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tokens trimmed per day">${grid}${bars}</svg>`;
+}
+
+function renderLogin() {
+  return `<h1>Token Trim</h1><form class="login" id="login"><div><strong>Management key</strong></div>
+    <div class="muted">Enter the CLIProxyAPI management key. It is kept in this tab's session storage only.</div>
+    <input type="password" id="key" autocomplete="current-password" autofocus required>
+    <button class="btn primary" type="submit">Connect</button></form>`;
+}
+
+// Token consumption as the providers report it, for every request through the proxy.
+const PARTS = [
+  { id: 'input', name: 'Input', color: 'var(--teal)' },
+  { id: 'cache_read', name: 'Cache read', color: 'color-mix(in srgb, var(--teal) 35%, transparent)' },
+  { id: 'cache_write', name: 'Cache write', color: 'var(--yellow)' },
+  { id: 'output', name: 'Output', color: 'var(--text-2)' },
+];
+
+function usageTile(label, u, cost) {
+  const parts = PARTS.filter((p) => u[p.id] > 0);
+  const failed = u.failed ? ` · <span class="err">${compact(u.failed)} failed</span>` : '';
+  return `<div class="tile use"><span class="k">${label}</span><span class="v">${compact(u.total)}<small>tokens</small></span><span class="s">${compact(u.requests)} requests${failed}${cost != null ? ` · ≈ <b>${usd(cost)}</b> at your prices` : ''}</span>
+    ${parts.length ? `<div class="split" role="img" aria-label="${parts.map((p) => `${p.name} ${u[p.id]}`).join(', ')}">${parts.map((p) => `<i style="flex:${u[p.id]};background:${p.color}"></i>`).join('')}</div>
+    <div class="split-legend">${parts.map((p) => `<span title="${u[p.id].toLocaleString()} tokens"><i style="background:${p.color}"></i>${p.name} ${compact(u[p.id])}</span>`).join('')}</div>` : ''}</div>`;
+}
+
+// Small rates keep one decimal: 0.4 tok/s must not read as 0.
+const rateFmt = (n) => (n < 10 ? n.toFixed(1) : compact(n));
+const tokPerSec = (p) => (p && p.gen_ms > 0 ? p.output / (p.gen_ms / 1000) : 0);
+const secs = (ms) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
+
+function sumSpeed(list) {
+  return list.reduce((a, p) => ({ requests: a.requests + p.requests, output: a.output + p.output, gen_ms: a.gen_ms + p.gen_ms, ttft_ms: a.ttft_ms + p.ttft_ms }), { requests: 0, output: 0, gen_ms: 0, ttft_ms: 0 });
+}
+
+// Percentile q of a histogram whose bucket i holds values below edges[i] (the last bucket is open):
+// linear inside the bucket. Returns [value, open] where open means "at least value".
+function pctl(hist, edges, q) {
+  const n = (hist || []).reduce((a, b) => a + b, 0);
+  if (!n) return null;
+  const target = q * n;
+  let cum = 0;
+  for (let i = 0; i < hist.length; i++) {
+    if (hist[i] && cum + hist[i] >= target) {
+      if (i === edges.length) return [edges[i - 1], true];
+      const lo = i ? edges[i - 1] : 0;
+      return [lo + (edges[i] - lo) * ((target - cum) / hist[i]), false];
+    }
+    cum += hist[i];
+  }
+  return [edges[edges.length - 1], true];
+}
+const fmtPctl = (v, f) => (v ? `${v[1] ? '≥ ' : ''}${f(v[0])}` : '—');
+
+function usageCard(s) {
+  const live = s.live, last5 = live.slice(-5);
+  const rate = last5.reduce((a, m) => a + m.tokens, 0) / (last5.length * 60);
+  const reqs5 = last5.reduce((a, m) => a + m.requests, 0);
+  const sp5 = sumSpeed(last5.map((m) => m.speed));
+  const peak = Math.max(0, ...live.map((m) => m.tokens));
+  // Bars only, stretched to the card width (preserveAspectRatio none); labels are HTML so they never scale.
+  const W = 600, H = 64, maxV = Math.max(1, peak), bw = W / live.length;
+  const bars = live.map((m, i) => {
+    const h = m.tokens ? Math.max(2, (m.tokens / maxV) * (H - 4)) : 0;
+    const d = new Date(m.at);
+    return `<g><title>${pad(d.getHours())}:${pad(d.getMinutes())} · ${m.tokens.toLocaleString()} tokens · ${m.requests} requests</title><rect x="${i * bw}" y="0" width="${bw}" height="${H}" fill="transparent"/>${h ? `<rect x="${i * bw + bw * 0.12}" y="${H - 1 - h}" width="${bw * 0.76}" height="${h}" fill="var(--teal)"/>` : ''}</g>`;
+  }).join('');
+  const axis = `<line x1="0" x2="${W}" y1="${H - 0.5}" y2="${H - 0.5}" stroke="var(--border)" vector-effect="non-scaling-stroke"/>`;
+  const month = new Date(s.now).toLocaleString(undefined, { month: 'long' });
+  return `<section class="surface card"><header><h2>Token consumption</h2><span class="hint">Every request through the proxy, as the providers count it · refreshes every 5 s</span></header>
+    <div class="use-grid">
+      <div class="tile use"><span class="k">Live · last 5 min</span><span class="v">${rateFmt(rate)}<small>tokens/s</small></span><span class="s">${compact(reqs5)} requests · ${compact(live[live.length - 1].tokens)} tokens this minute</span></div>
+      <div class="tile use"><span class="k">Output speed · last 5 min</span><span class="v">${sp5.requests ? rateFmt(tokPerSec(sp5)) : '—'}<small>tokens/s</small></span><span class="s">${sp5.requests ? `while generating · first token after ${secs(sp5.ttft_ms / sp5.requests)} on average · ${sp5.requests} streamed replies` : 'Measured on streamed replies (Claude Code, Codex…); none in the last 5 minutes.'}</span></div>
+      ${usageTile('Today', s.today.used, costOf(s.today.usage))}
+      ${usageTile(`This month · ${esc(month)}`, s.month, costOf(s.month_usage))}
+    </div>
+    <div class="live"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Tokens per minute, last hour">${axis}${bars}</svg><div class="axis"><span>60 min ago</span><span>now · peak ${compact(peak)}/min</span></div></div></section>`;
+}
+
+function cacheTotals(usage) {
+  const u = Object.values(usage || {}).reduce((a, x) => ({ input: a.input + x.input, read: a.read + x.cache_read, write: a.write + x.cache_write, breaks: a.breaks + x.breaks }), { input: 0, read: 0, write: 0, breaks: 0 });
+  return { ...u, prompt: u.input + u.read + u.write };
+}
+
+/* ---------- tabs ---------- */
+
+function overviewTab(s, ctx) {
+  const { t, verb, trimmed, fresh } = ctx;
+  const c = cacheTotals(s.today.usage);
+  const health = `<div class="health">
+    <span class="pill ${c.prompt ? 'ok' : ''}">${c.prompt ? `${pct(c.read, c.prompt)} of today's prompt tokens read from cache` : 'No prompts yet today'}</span>
+    <span class="pill ${c.breaks ? 'bad' : 'ok'}">${c.breaks} cache break${c.breaks === 1 ? '' : 's'} today</span>
+    <span class="pill">${compact(s.pins)} tool outputs pinned</span>
+    ${t.unsafe ? `<span class="pill bad">${t.unsafe} patches failed the check (sent unchanged)</span>` : ''}</div>`;
+  const value = valueOf(t.models);
+  const tiles = `<div class="tiles">
+    <div class="surface tile hero"><span class="k">Tokens ${verb}</span><span class="v">≈${compact(tok(trimmed))}</span><span class="s">${pct(trimmed, t.chars_in)} of ≈${compact(tok(t.chars_in))} tool-output tokens sent, last ${state.days} days${value != null ? ` · worth ≈ <b>${usd(value)}</b>` : ''}</span></div>
+    <div class="surface tile"><span class="k">New tokens ${verb}</span><span class="v">≈${compact(tok(fresh))}</span><span class="s">First time an output was trimmed. These would have been billed at the full input price.</span></div>
+    <div class="surface tile"><span class="k">Re-sent tokens ${verb}</span><span class="v">≈${compact(tok(trimmed - fresh))}</span><span class="s">The same outputs again on later turns. Most were cache reads, which cost much less.</span></div>
+    <div class="surface tile"><span class="k">Requests trimmed</span><span class="v">${compact(t.trimmed)}<small>of ${compact(t.with_tools)}</small></span><span class="s">${compact(t.trimmed_outputs)} of ${compact(t.outputs)} tool outputs shortened · ${compact(t.requests)} requests seen${t.errors ? ` · <span class="err">${t.errors} unparsable, sent unchanged</span>` : ''}</span></div>
+  </div>`;
+  const history = `<section class="surface card chart"><header><h2>Per day</h2><span class="hint">≈ tokens ${verb} · hover a bar for numbers</span></header>${chart(s.days, ctx.apply, ctx.mode === 'measure')}
+    <div class="legend"><span><i style="background:var(--teal)"></i>new (full price)</span><span><i style="background:color-mix(in srgb, var(--teal) 35%, transparent)"></i>re-sent (mostly cache reads)</span><span>${CHARS_PER_TOKEN} bytes ≈ 1 token</span></div></section>`;
+  return { main: health + usageCard(s) + tiles + history };
+}
+
+function trimmingTab(s, ctx) {
+  const { t, busy } = ctx;
+  const ruleTotal = Math.max(1, ...RULES.map((r) => t.rules[r.id]?.saved || 0));
+  const rules = `<section class="surface card"><header><h2>Rules</h2><span class="hint">Each rule only touches tool outputs and always turns the same output into the same text. Totals count measured and applied requests.</span></header><div class="rules">${RULES.map((r) => {
+    const on = s.settings.rules[r.id];
+    const c = t.rules[r.id] || { hits: 0, saved: 0 };
+    const shadow = t.shadow?.[r.id] || 0;
+    const num = on ? `<b>≈${compact(tok(c.saved))}</b> tokens · in ${compact(c.hits)} request${c.hits === 1 ? '' : 's'}`
+      : shadow ? `Off · would have removed <b>≈${compact(tok(shadow))}</b> tokens` : 'Off · nothing it would have removed';
+    return `<div class="rule ${on ? '' : 'disabled'}"><div class="rule-top"><span class="rule-name">${esc(r.name)}</span><button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(r.name)}" data-rule="${r.id}" ${busy ? 'disabled' : ''}></button></div>
+      <p>${esc(r.what)}</p><div class="share"><i style="width:${((on ? c.saved : shadow) / ruleTotal) * 100}%"></i></div>
+      <span class="num">${num}</span></div>`;
+  }).join('')}</div><div class="hint">Outputs under <b>${s.settings.min_output_chars}</b> characters are left alone; duplicates must be at least <b>${s.settings.dedupe_min_chars}</b> characters.${t.skipped ? ` ${compact(t.skipped)} outputs skipped by your opt-outs.` : ''}</div></section>`;
+
+  const tools = Object.entries(t.tools || {}).sort((a, b) => b[1].chars - a[1].chars);
+  const toolMax = Math.max(1, ...tools.map(([, x]) => x.chars));
+  const skipped = (name) => s.settings.skip_tools.some((p) => matches(p, name));
+  const toolCard = `<section class="surface card"><header><h2>Savings by tool</h2><span class="hint">Each output counted once, when it was first sent · fix the noisiest at the source</span></header>${tools.length
+    ? `<div class="table-wrap"><table><thead><tr><th>Tool</th><th class="n">Outputs</th><th class="n">≈ tokens produced</th><th class="n">≈ trimmable</th><th style="width:28%"></th></tr></thead><tbody>${tools.map(([n, x]) => `<tr><td><span class="mono">${esc(n)}</span>${skipped(n) ? ' <span class="tag">skipped</span>' : ''}</td><td class="n">${compact(x.outputs)}</td><td class="n">${compact(tok(x.chars))}</td><td class="n">${compact(tok(x.saved))} <span class="muted">${pct(x.saved, x.chars)}</span></td><td><div class="share"><i style="width:${(x.chars / toolMax) * 100}%"></i></div></td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="muted">No tool outputs yet in this period.</div>'}</section>`;
+
+  const big = `<section class="surface card"><header><h2>Biggest outputs</h2><span class="hint">Largest new tool outputs of the last 30 days · sizes only</span></header>${s.biggest?.length
+    ? `<div class="table-wrap"><table><thead><tr><th>When</th><th>Tool</th><th>Model</th><th class="n">≈ tokens</th><th class="n">≈ trimmable</th></tr></thead><tbody>${s.biggest.map((b) => `<tr><td title="${esc(when(b.at))}">${esc(ago(b.at))}</td><td><span class="mono">${esc(b.tool)}</span></td><td><span class="mono">${esc(b.model)}</span></td><td class="n">${compact(tok(b.chars))}</td><td class="n">${compact(tok(b.saved))}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="muted">Nothing yet.</div>'}</section>`;
+
+  const models = Object.entries(t.models).sort((a, b) => b[1].saved - a[1].saved || b[1].hits - a[1].hits);
+  const modelTable = models.length
+    ? `<div class="table-wrap"><table><thead><tr><th>Model</th><th class="n">Requests with tools</th><th class="n" title="Measured and applied requests">≈ tokens trimmed</th></tr></thead><tbody>${models.map(([m, c]) => `<tr><td><span class="mono">${esc(m)}</span></td><td class="n">${compact(c.hits)}</td><td class="n">${compact(tok(c.saved))}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="muted">No requests with tool outputs yet. They show up as soon as an agent (Claude Code, Codex…) calls a tool through the proxy.</div>';
+  const formats = Object.entries(t.formats).map(([f, n]) => `${esc(FORMAT_NAMES[f] || f)} ${compact(n)}`).join(' · ');
+  const byModel = `<section class="surface card"><header><h2>By model</h2>${formats ? `<span class="hint">${formats}</span>` : ''}</header>${modelTable}</section>`;
+
+  const recent = s.recent.length
+    ? `<div class="table-wrap"><table><thead><tr><th>When</th><th>Model</th><th>Rules</th><th class="n">Outputs</th><th class="n">≈ tokens</th></tr></thead><tbody>${s.recent.slice(0, 25).map((r) => `<tr><td title="${esc(when(r.at))}">${esc(ago(r.at))}${r.applied ? '' : ' <span class="tag">measured</span>'}</td><td><span class="mono">${esc(r.model)}</span></td><td>${r.rules.map((x) => `<span class="tag">${esc(RULES.find((y) => y.id === x)?.name || x)}</span>`).join('')}</td><td class="n">${r.trimmed}/${r.outputs}</td><td class="n" title="${compact(tok(r.new_saved))} new">−${compact(tok(r.saved))} <span class="muted">of ${compact(tok(r.chars_in))}</span></td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="muted">Nothing trimmed yet.</div>';
+  const recentCard = `<section class="surface card"><header><h2>Recent</h2><span class="hint">Sizes only: no tool output text is stored.</span></header>${recent}</section>`;
+
+  const pv = state.preview;
+  const play = `<section class="surface card"><header><h2>Try it</h2><span class="hint">Runs the enabled rules on pasted text</span></header>
+    <textarea id="sample" spellcheck="false" placeholder="Paste a tool output: build log, test run, JSON response…">${esc(state.sample)}</textarea>
+    <div class="row"><button class="btn primary small" data-action="preview">Trim</button><button class="btn small" data-action="example">Load an example</button>${pv ? `<span class="hint"><b>${pv.before}</b> → <b>${pv.after}</b> bytes (−${pct(pv.before - pv.after, pv.before)}) ${Object.entries(pv.rules || {}).map(([k, v]) => `· ${esc(RULES.find((r) => r.id === k)?.name || k)} −${v}`).join(' ')}</span>` : ''}</div>
+    ${pv ? `<pre class="out">${esc(pv.text)}</pre>` : ''}</section>`;
+  return { main: rules + toolCard + big + byModel + recentCard, side: play };
+}
+
+function cacheTab(s, ctx) {
+  const { t } = ctx;
+  const rows = Object.entries(t.usage || {}).filter(([, u]) => u.requests).sort((a, b) => b[1].total - a[1].total);
+  const health = `<section class="surface card"><header><h2>Prompt cache by model</h2><span class="hint">Last ${state.days} days · a break is a conversation whose cached history was rebuilt within 5 minutes of its last request</span></header>${rows.length
+    ? `<div class="table-wrap"><table><thead><tr><th>Model</th><th class="n">Requests</th><th class="n">Prompt tokens</th><th class="n">Read from cache</th><th class="n">Written to cache</th><th class="n">Breaks</th><th class="n" title="Rebuilt after a pause longer than the cache lifetime: normal">Expired</th></tr></thead><tbody>${rows.map(([m, u]) => {
+      const prompt = u.input + u.cache_read + u.cache_write;
+      return `<tr><td><span class="mono">${esc(m)}</span></td><td class="n">${compact(u.requests)}</td><td class="n">${compact(prompt)}</td><td class="n">${pct(u.cache_read, prompt)}</td><td class="n">${compact(u.cache_write)}</td><td class="n">${u.breaks ? `<span class="err">${u.breaks}</span>` : '0'}</td><td class="n">${compact(u.expired)}</td></tr>`;
+    }).join('')}</tbody></table></div>`
+    : '<div class="muted">No requests in this period.</div>'}</section>`;
+  const changed = s.last_config ? `Settings last changed ${ago(s.last_config)} (${when(s.last_config)}).` : 'Settings unchanged since the proxy started.';
+  const breaks = `<section class="surface card"><header><h2>Cache breaks</h2><span class="hint">${esc(changed)} Watched for Anthropic models, the only ones that report cache writes.</span></header>${s.breaks?.length
+    ? `<div class="table-wrap"><table><thead><tr><th>When</th><th>Model</th><th>Conversation</th><th class="n">Prompt before → now</th><th class="n">Read</th><th class="n">Written</th><th class="n">After</th><th>Token Trim</th></tr></thead><tbody>${s.breaks.map((b) => `<tr><td title="${esc(when(b.at))}">${esc(ago(b.at))}</td><td><span class="mono">${esc(b.model)}</span></td><td><span class="mono">${esc(b.session)}</span></td><td class="n">${compact(b.prev_prompt)} → ${compact(b.prompt)}</td><td class="n">${compact(b.cache_read)}</td><td class="n">${compact(b.cache_write)}</td><td class="n">${b.gap_s} s</td><td>${esc(b.mode)}</td></tr>`).join('')}</tbody></table></div>
+      <div class="hint">Something changed the start of these conversations: a new system prompt, a tool or MCP server added, a compaction the client did. Token Trim cannot cause it: outputs already sent always go out again exactly as before (see pinning).</div>`
+    : '<div class="muted">None. Every conversation that came back within 5 minutes reused its cached history.</div>'}</section>`;
+  const pins = `<section class="surface card"><header><h2>Pinning</h2></header>
+    <div class="tiles"><div class="tile use"><span class="k">Pinned outputs</span><span class="v">${compact(s.pins)}<small>of ${compact(s.max_pins)}</small></span><span class="s">Each tool output keeps the form it was first sent in, whatever the mode or rules later.</span></div>
+    <div class="tile use"><span class="k">Kept as first sent</span><span class="v">${compact(t.kept_outputs)}<small>outputs</small></span><span class="s">≈${compact(tok(t.kept))} tokens left in, last ${state.days} days, so open conversations stayed cached instead of being trimmed mid-way.</span></div></div></section>`;
+  const safe = `<section class="surface card"><header><h2>How it stays safe</h2></header><ul class="safe">
+    <li><b>Only tool outputs</b> are rewritten: your prompts, the model's replies, the system prompt and tool definitions go out byte for byte.</li>
+    <li><b>Pinned.</b> An output keeps the form it was first sent in, so switching mode or rules never rewrites a conversation the provider has cached.</li>
+    <li><b>Checked.</b> Every patched request is re-parsed before it leaves; one that is not valid JSON goes out unchanged${t.unsafe ? ` (<span class="err">${t.unsafe} so far</span>)` : ' (none so far)'}.</li>
+    <li><b>Fails open.</b> If a request can't be parsed or anything goes wrong, it is sent unchanged${t.errors ? ` (${t.errors} so far)` : ''}.</li>
+    <li><b>Replies are never touched.</b> By the time a reply exists its tokens are already counted.</li></ul>
+    <div class="row"><button class="btn small" data-action="reset">Reset trim statistics</button><span class="hint">Counting since ${esc(when(s.since))} · consumption, speed, cache data and pins are kept</span></div></section>`;
+  return { main: health + breaks + pins + safe };
+}
+
+function speedTab(s, ctx) {
+  const { t } = ctx;
+  const rateCells = (p) => {
+    const r = (q) => fmtPctl(pctl(p.rate_hist, s.rate_edges, q), rateFmt);
+    const f = (q) => fmtPctl(pctl(p.ttft_hist, s.ttft_edges, q), secs);
+    return `<td class="n">${compact(p.requests)}</td><td class="n"><b>${rateFmt(tokPerSec(p))}</b></td><td class="n">${r(0.5)}</td><td class="n">${r(0.1)}</td><td class="n">${f(0.5)}</td><td class="n">${f(0.9)}</td>`;
+  };
+  const head = (first) => `<thead><tr><th>${first}</th><th class="n">Replies</th><th class="n">Average</th><th class="n">Median</th><th class="n" title="10% of replies were slower than this">Slowest 10%</th><th class="n">First token · median</th><th class="n" title="10% waited longer than this">First token · slowest 10%</th></tr></thead>`;
+  const table = (map, first) => {
+    const rows = Object.entries(map || {}).sort((a, b) => b[1].requests - a[1].requests);
+    return rows.length ? `<div class="table-wrap"><table>${head(first)}<tbody>${rows.map(([k, p]) => `<tr><td><span class="mono">${esc(k)}</span></td>${rateCells(p)}</tr>`).join('')}</tbody></table></div>`
+      : '<div class="muted">No streamed replies in this period yet. Claude Code and Codex stream, so their requests show up here.</div>';
+  };
+  const all = sumSpeed(Object.values(t.speed || {}));
+  const byModel = `<section class="surface card"><header><h2>Speed by model</h2><span class="hint">${all.requests ? `${rateFmt(tokPerSec(all))} tokens/s overall · ` : ''}output tokens ÷ time from first to last token, measured by the proxy on streamed replies · last ${state.days} days · medians are read from histograms</span></header>${table(t.speed, 'Model')}</section>`;
+  const byAccount = `<section class="surface card"><header><h2>Speed by account</h2><span class="hint">The same, per credential: a slow account stands out here</span></header>${table(t.accounts, 'Account')}</section>`;
+  const edges = s.prompt_edges;
+  const classes = [`< ${compact(edges[0])}`, ...edges.slice(1).map((e, i) => `${compact(edges[i])}–${compact(e)}`), `≥ ${compact(edges[edges.length - 1])}`];
+  const rows = Object.entries(t.speed || {}).filter(([, p]) => p.requests).sort((a, b) => b[1].requests - a[1].requests);
+  const byPrompt = `<section class="surface card"><header><h2>First token by prompt size</h2><span class="hint">Average wait for the first token, by prompt tokens (input + cache) · cached prompts start faster</span></header>${rows.length
+    ? `<div class="table-wrap"><table><thead><tr><th>Model</th>${classes.map((c) => `<th class="n">${c}</th>`).join('')}</tr></thead><tbody>${rows.map(([m, p]) => `<tr><td><span class="mono">${esc(m)}</span></td>${p.by_prompt.map((c) => `<td class="n">${c.requests ? `${secs(c.ttft_ms / c.requests)} <span class="muted">(${c.requests})</span>` : '—'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+    : '<div class="muted">No streamed replies in this period yet.</div>'}</section>`;
+  return { main: byModel + byAccount + byPrompt };
+}
+
+function priceRow(pattern, p, seen) {
+  const cell = (k) => `<td class="n"><input class="num" type="number" min="0" step="any" data-k="${k}" value="${p?.[k] ?? ''}" placeholder="—" aria-label="${k.replace('_', ' ')} $ per million tokens"></td>`;
+  return `<tr><td><input class="text" data-k="pattern" value="${esc(pattern)}" placeholder="model or prefix*" aria-label="Model"></td>${['input', 'cache_read', 'cache_write', 'output'].map(cell).join('')}<td>${seen ? '<span class="tag">no price yet</span>' : ''}</td></tr>`;
+}
+
+function settingsTab(s, ctx) {
+  const { t, busy } = ctx;
+  const toolsSeen = Object.keys(t.tools || {}).filter((n) => n !== 'unknown').sort();
+  const modelsSeen = [...new Set([...Object.keys(s.month_usage || {}), ...Object.keys(t.usage || {}), ...Object.keys(t.models || {})])].filter((m) => m !== 'unknown').sort();
+  const optOut = `<section class="surface card"><header><h2>Never trim</h2><span class="hint">Comma-separated · case-insensitive · end with * for a prefix</span></header>
+    <label class="field">Tools <input class="text" id="skip-tools" value="${esc(s.settings.skip_tools.join(', '))}" placeholder="Read, mcp__*"></label>
+    ${toolsSeen.length ? `<div class="hint">Seen: ${toolsSeen.map(esc).join(', ')}</div>` : ''}
+    <label class="field">Models <input class="text" id="skip-models" value="${esc(s.settings.skip_models.join(', '))}" placeholder="claude-opus-*"></label>
+    ${modelsSeen.length ? `<div class="hint">Seen: ${modelsSeen.map(esc).join(', ')}</div>` : ''}
+    <div class="row"><button class="btn primary small" data-action="save-skip" ${busy ? 'disabled' : ''}>Save</button><span class="hint">Their outputs are still counted, never changed. Per client key is not possible: the plugin only sees the request body.</span></div></section>`;
+  const configured = Object.entries(s.settings.prices || {}).sort(([a], [b]) => a.localeCompare(b));
+  const unpriced = modelsSeen.filter((m) => !priceFor(m));
+  const prices = `<section class="surface card"><header><h2>Prices</h2><span class="hint">$ per million tokens · used for cost and the value of trimmed tokens</span></header>
+    <div class="table-wrap"><table id="prices"><thead><tr><th>Model</th><th class="n">Input</th><th class="n">Cache read</th><th class="n">Cache write</th><th class="n">Output</th><th></th></tr></thead><tbody>
+    ${configured.map(([k, p]) => priceRow(k, p, false)).join('')}${unpriced.map((m) => priceRow(m, null, true)).join('')}</tbody></table></div>
+    <div class="row"><button class="btn small" data-action="add-price">Add row</button><button class="btn primary small" data-action="save-prices" ${busy ? 'disabled' : ''}>Save prices</button>
+    <span class="hint">Rows without any price are dropped. Subscriptions (Claude Max, ChatGPT, OpenCode Go) are not billed per token: the figures show what the same traffic would cost on the API.</span></div></section>`;
+  const thresholds = `<section class="surface card"><header><h2>Thresholds</h2></header><div class="hint">Outputs under <b>${s.settings.min_output_chars}</b> characters are left alone; duplicates must be at least <b>${s.settings.dedupe_min_chars}</b> characters. Change them in CPAMC → Plugins → token-trim.</div></section>`;
+  return { main: optOut + prices + thresholds };
+}
+
+function render() {
+  const app = document.getElementById('app');
+  if (state.needKey) { app.innerHTML = renderLogin(); return; }
+  const s = state.stats;
+  if (!s) { app.innerHTML = `<h1>Token Trim</h1><div class="muted" style="margin-top:24px">${state.error ? `<span class="err">${esc(state.error)}</span>` : 'Loading…'}</div>`; return; }
+  const y = window.scrollY;
+  const mode = s.settings.mode;
+  const apply = mode === 'apply';
+  const t = s.total;
+  const { all: trimmed, fresh } = figures(t, mode === 'measure');
+  const verb = apply ? 'saved' : mode === 'measure' ? 'trimmable' : 'trimmed';
+  const busy = Boolean(state.busy);
+  const ctx = { t, mode, apply, verb, trimmed, fresh, busy };
+  const seg = `<div class="seg" role="radiogroup" aria-label="Mode">${['off', 'measure', 'apply'].map((m) => `<button role="radio" aria-checked="${m === mode}" class="${m === mode ? 'on' : ''}" data-mode="${m}" ${busy ? 'disabled' : ''}>${m === 'off' ? 'Off' : m === 'measure' ? 'Measure' : 'Apply'}</button>`).join('')}</div>`;
+  const range = `<select id="range" aria-label="Period">${[7, 30, 90].map((d) => `<option value="${d}" ${state.days === d ? 'selected' : ''}>Last ${d} days</option>`).join('')}</select>`;
+  const status = apply ? '<span class="pill dot ok">Trimming</span>' : mode === 'measure' ? '<span class="pill dot warn">Measuring only</span>' : '<span class="pill dot off">Off</span>';
+  const dayRate = tok(s.days.slice(-7).reduce((a, d) => a + d.new_would + d.new_saved, 0)) / Math.min(7, s.days.length);
+  const banner = mode === 'measure'
+    ? `<div class="banner measure"><span><b>Measuring only:</b> requests go out unchanged. In the last 7 days trimming would have removed <b>≈${compact(tok(s.days.slice(-7).reduce((a, d) => a + d.would, 0)))} tokens</b> (about <b>${compact(dayRate)}</b> new per day). Switching on keeps conversations already open exactly as sent, so their cache stays warm; new tool outputs get trimmed.</span><button class="btn primary small" data-mode="apply" ${busy ? 'disabled' : ''}>Start trimming</button></div>`
+    : mode === 'off' ? '<div class="banner off"><span><b>Off:</b> requests pass through untouched and nothing is measured. Consumption, speed and cache health are still recorded.</span></div>' : '';
+  const tab = TABS.some(([id]) => id === state.tab) ? state.tab : 'overview';
+  const tabs = `<div class="tabs" role="tablist">${TABS.map(([id, label]) => `<button role="tab" aria-selected="${id === tab}" data-tab="${id}">${label}</button>`).join('')}</div>`;
+  const view = { overview: overviewTab, trimming: trimmingTab, cache: cacheTab, speed: speedTab, settings: settingsTab }[tab](s, ctx);
+
+  app.innerHTML = `
+    <div class="head">
+      <div><h1>Token Trim</h1><div class="meta">${status} · v${esc(s.version)} · ${compact(t.requests)} requests in ${state.days} d${state.busy ? ` · ${esc(state.busy)}…` : ''}${s.error ? ` · <span class="err">${esc(s.error)}</span>` : ''}${state.error ? ` · <span class="err">${esc(state.error)}</span>` : ''}</div></div>
+      <div class="actions">${range}${seg}</div>
+    </div>
+    ${banner}${tabs}
+    <div class="layout ${view.side ? '' : 'single'}">
+      <div class="main-col">${view.main}</div>
+      ${view.side ? `<aside class="side">${view.side}</aside>` : ''}
+    </div>`;
+  window.scrollTo(0, y);
+}
+
+const EXAMPLE = (() => {
+  const lines = ['\x1b[1m> npm test\x1b[0m', '', 'Downloading deps 12%\rDownloading deps 57%\rDownloading deps 100%'];
+  for (let i = 1; i <= 24; i++) lines.push(`\x1b[32m✓\x1b[0m [2026-10-30 12:00:${pad(i)}] worker ${i} processed batch ${100 + i} in ${20 + i}ms`);
+  lines.push('', '{', '  "passed": 24,', '  "failed": 0,', '  "duration_ms": 913', '}');
+  return lines.join('\n');
+})();
+
+function savePrices() {
+  const prices = {};
+  for (const tr of document.querySelectorAll('#prices tbody tr')) {
+    const pattern = tr.querySelector('[data-k="pattern"]').value.trim();
+    const p = {};
+    for (const k of ['input', 'cache_read', 'cache_write', 'output']) {
+      const raw = tr.querySelector(`[data-k="${k}"]`).value.trim();
+      if (raw === '') continue;
+      const v = Number(raw);
+      if (!Number.isFinite(v) || v < 0) { state.error = `${pattern || 'A row'}: prices must be numbers ≥ 0`; render(); return; }
+      p[k] = v;
+    }
+    if (pattern && Object.keys(p).length) prices[pattern] = { input: 0, cache_read: 0, cache_write: 0, output: 0, ...p };
+  }
+  setConfig({ prices }, 'Saving prices');
+}
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('button');
+  if (!el || el.disabled) return;
+  const action = el.dataset.action;
+  if (el.dataset.tab) {
+    state.tab = el.dataset.tab;
+    sessionStorage.setItem('token-trim:tab', state.tab);
+    window.scrollTo(0, 0);
+    render();
+  } else if (el.dataset.mode) {
+    const m = el.dataset.mode;
+    if (m !== state.stats?.settings.mode) setConfig({ mode: m }, m === 'apply' ? 'Turning trimming on' : m === 'measure' ? 'Switching to measure' : 'Turning off');
+  } else if (el.dataset.rule) {
+    const on = state.stats.settings.rules[el.dataset.rule];
+    setConfig({ [`rule_${el.dataset.rule}`]: !on }, `${on ? 'Disabling' : 'Enabling'} ${RULES.find((r) => r.id === el.dataset.rule).name}`);
+  } else if (action === 'preview') {
+    // state.sample, not the textarea's value: a textarea turns \r into \n, which hides progress-bar redraws.
+    mgmt(`${API}preview`, { text: state.sample }).then((r) => { state.preview = r; }).catch((err) => { state.error = err.message; }).finally(render);
+  } else if (action === 'example') {
+    state.sample = EXAMPLE;
+    state.preview = null;
+    render();
+  } else if (action === 'reset') {
+    if (!confirm('Reset the trim statistics? Consumption, speed, cache data and pins are kept.')) return;
+    mgmt(`${API}reset`, {}).then((r) => { state.stats = r; }).catch((err) => { state.error = err.message; }).finally(load);
+  } else if (action === 'save-skip') {
+    const list = (id) => document.getElementById(id).value.split(',').map((x) => x.trim()).filter(Boolean);
+    setConfig({ skip_tools: list('skip-tools'), skip_models: list('skip-models') }, 'Saving opt-outs');
+  } else if (action === 'add-price') {
+    document.querySelector('#prices tbody').insertAdjacentHTML('beforeend', priceRow('', null, false));
+  } else if (action === 'save-prices') {
+    savePrices();
+  }
+});
+document.addEventListener('input', (e) => { if (e.target.id === 'sample') state.sample = e.target.value; });
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'range') return;
+  state.days = Number(e.target.value);
+  load();
+});
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'login') return;
+  e.preventDefault();
+  state.key = document.getElementById('key').value.trim();
+  sessionStorage.setItem('token-trim:key', state.key);
+  state.needKey = false;
+  load();
+});
+
+/* ---------- theme: follow CPAMC's data-theme on the parent document ---------- */
+function syncTheme() {
+  let theme = null;
+  try {
+    if (window.parent !== window) theme = window.parent.document.documentElement.getAttribute('data-theme');
+    else theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : null;
+  } catch { /* cross-origin parent */ }
+  if (theme) document.documentElement.setAttribute('data-theme', theme);
+  else document.documentElement.removeAttribute('data-theme');
+}
+syncTheme();
+if (window.parent !== window) document.documentElement.classList.add('embedded');
+try {
+  if (window.parent !== window) new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+} catch { /* cross-origin parent */ }
+
+state.key = sessionStorage.getItem('token-trim:key') || cpamcKey();
+if (state.key) load(); else requireKey();
+// Re-rendering replaces the page: skip it while typing (Try it box) and on the Settings tab, whose forms
+// would lose unsaved edits; actions there reload explicitly.
+setInterval(() => { if (!state.needKey && !document.hidden && !state.busy && state.tab !== 'settings' && document.activeElement?.id !== 'sample') load(); }, 5000);
+</script>
+</body>
+</html>

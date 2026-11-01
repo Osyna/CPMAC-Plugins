@@ -1,0 +1,1482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quota Ledger</title>
+<style>
+/* Tokens copied from CPAMC src/styles/themes.scss so the iframe matches the host UI. */
+:root {
+  --bg-page: #faf9f5; --bg-card: #f0eee8; --bg-hover: #e9e6df; --track: #e3e1db;
+  --text-1: #2d2a26; --text-2: #6d6760; --text-3: #a29c95;
+  --border: #e3e1db; --border-strong: #d5d2cb;
+  --green: #10b981; --yellow: #e0aa14; --red: #c65746; --warn: #a8710a;
+  --btn-bg: #2d2a26; --btn-text: #ffffff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 8px 24px -12px rgba(0, 0, 0, .12);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+}
+[data-theme='white'] { --bg-page: #ffffff; --bg-card: #ffffff; --bg-hover: #f6f6f6; --border: #e5e5e5; --border-strong: #d9d9d9; --track: #ececec; }
+[data-theme='dark'] {
+  --bg-page: #151412; --bg-card: #1d1b18; --bg-hover: #262320; --track: #3a3530;
+  --text-1: #f6f4f1; --text-2: #c9c3bb; --text-3: #9c958d;
+  --border: #3a3530; --border-strong: #4a453f;
+  --yellow: #ffd862; --warn: #ffd862; --btn-bg: #f6f4f1; --btn-text: #151412;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 10px 28px -14px rgba(0, 0, 0, .6);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg-page); color: var(--text-1); font-family: var(--sans); -webkit-font-smoothing: antialiased; line-height: 1.5; }
+button { font: inherit; color: inherit; cursor: pointer; }
+main { padding: 32px clamp(20px, 3vw, 48px) 64px; max-width: 2200px; }
+.head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; text-wrap: balance; }
+h2 { margin: 0; font-size: 16px; font-weight: 650; display: inline-flex; align-items: center; gap: 8px; }
+.meta { margin-top: 8px; font-family: var(--mono); font-size: 15px; color: var(--text-2); border-left: 3px solid var(--green); padding-left: 14px; }
+.meta .ok { color: var(--green); }
+.actions { display: flex; gap: 10px; align-items: center; padding-top: 8px; }
+.embedded .actions { margin-right: 170px; } /* clear CPAMC's floating toolbar over the iframe */
+.btn { border: 1px solid var(--border-strong); background: transparent; border-radius: 999px; padding: 7px 16px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; transition-property: background-color, transform; transition-duration: 150ms; transition-timing-function: ease-out; }
+.btn:hover { background: var(--bg-hover); }
+.btn:active { transform: scale(0.97); }
+.btn.primary { background: var(--btn-bg); color: var(--btn-text); border-color: var(--btn-bg); font-weight: 600; }
+.btn.small { padding: 4px 12px; font-size: 13px; }
+.btn:disabled, .icon-btn:disabled { opacity: .5; cursor: default; }
+.bar-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 22px; border-bottom: 1px solid var(--border); }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tab { border: 0; background: none; padding: 10px 14px 12px; display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--text-2); border-bottom: 2px solid transparent; margin-bottom: -1px; transition-property: color; transition-duration: 150ms; }
+.tab:hover { color: var(--text-1); }
+.tab.active { color: var(--text-1); border-bottom-color: var(--text-1); }
+.count { font-family: var(--mono); font-size: 11px; font-weight: 500; background: var(--bg-hover); color: var(--text-2); border-radius: 999px; padding: 1px 7px; }
+.icon { width: 18px; height: 18px; display: inline-flex; flex: none; }
+.icon svg { width: 100%; height: 100%; }
+select { font: inherit; font-size: 13px; color: var(--text-1); background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; }
+.muted { color: var(--text-3); font-size: 13px; }
+.hint { color: var(--text-3); font-size: 12px; line-height: 1.5; }
+.hint b { color: var(--text-2); font-weight: 600; }
+.err { color: var(--red); font-size: 13px; }
+.stale { color: var(--warn); font-size: 12px; }
+.surface { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+.section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+
+/* page grid: main column + sidebar on wide screens */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; margin-top: 24px; align-items: start; }
+@media (min-width: 1240px) { .layout { grid-template-columns: minmax(0, 1fr) clamp(320px, 24vw, 400px); } }
+.main-col, .side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+
+/* pills */
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; line-height: 1.6; padding: 0 9px; border-radius: 999px; background: var(--bg-hover); color: var(--text-2); white-space: nowrap; }
+.pill.dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.ok { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
+.pill.warn { color: var(--warn); background: color-mix(in srgb, var(--yellow) 20%, transparent); }
+.pill.err { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+.pill.off { color: var(--text-3); }
+
+/* provider overview cards */
+.overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+.pcard { position: relative; overflow: hidden; padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; container-type: inline-size; }
+.pcard::before, .acard::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--accent); opacity: .85; }
+.pc-head { display: flex; justify-content: space-between; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
+.pc-name { display: inline-flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; }
+.pc-name small { font-weight: 400; font-size: 13px; color: var(--text-3); white-space: nowrap; }
+.pc-hero { display: flex; align-items: center; gap: 18px; }
+.pc-hero-text { min-width: 0; flex: 1; }
+.donut { flex: none; }
+.eyebrow { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); }
+.hero-num { font-size: 34px; font-weight: 750; letter-spacing: -0.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.hero-num span { font-size: 15px; font-weight: 500; letter-spacing: 0; color: var(--text-2); margin-left: 6px; }
+.sub { font-size: 13px; color: var(--text-2); margin-top: 2px; text-wrap: pretty; }
+.segments { display: flex; gap: 4px; margin-top: 10px; }
+.seg { flex: 1; height: 5px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.pc-list { list-style: none; margin: 0; padding: 14px 0 0; border-top: 1px solid var(--border); display: grid; gap: 10px; }
+.pc-list li { display: grid; grid-template-columns: minmax(70px, 1.4fr) minmax(32px, 1fr) 40px auto; align-items: center; gap: 10px; font-size: 13px; }
+.pc-list li.cap { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); }
+.pc-list .lbl { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-list .pct { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.pc-list .when { text-align: right; color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.minibar, .track { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.minibar > i, .track > i, .seg > i { display: block; height: 100%; border-radius: inherit; transition: width 300ms ease-out; }
+.money { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 13px; }
+.money-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.money-row .lbl { flex: 1 0 auto; color: var(--text-2); }
+.money-row b { font-variant-numeric: tabular-nums; }
+.issue { font-size: 13px; color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); border-radius: 10px; padding: 8px 12px; text-wrap: pretty; }
+.issue.wait { color: var(--warn); background: color-mix(in srgb, var(--yellow) 12%, transparent); }
+.issue.relogin { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.issue.relogin .btn { color: var(--text-1); }
+
+/* lost at reset */
+.ws-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-page); }
+.ws-main { min-width: 0; display: grid; gap: 4px; }
+.ws-bars { display: flex; align-items: flex-end; gap: 3px; height: 34px; }
+.ws-bars i { width: 8px; border-radius: 2px; background: repeating-linear-gradient(-45deg, var(--warn) 0 3px, color-mix(in srgb, var(--warn) 45%, transparent) 3px 6px); }
+
+/* alerts, rules, integrations */
+.x-btn { border: 0; background: none; color: var(--text-3); font-size: 16px; line-height: 1; width: 24px; height: 24px; border-radius: 6px; }
+.x-btn:hover { background: var(--bg-hover); color: var(--text-1); }
+.rules ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13px; color: var(--text-2); }
+.rules li.on { color: var(--text-1); }
+.snip { margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.5; background: var(--bg-page); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; white-space: pre-wrap; word-break: break-all; color: var(--text-2); }
+.bar-preview { font-family: var(--mono); font-size: 14px; font-weight: 600; padding: 8px 12px; border-radius: 10px; background: var(--bg-page); border: 1px solid var(--border); }
+.bar-preview.warning { color: var(--warn); }
+.bar-preview.critical { color: var(--red); }
+
+/* use first: where unused quota is lost at reset */
+.uf { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+.uf header { display: flex; align-items: baseline; gap: 6px 12px; flex-wrap: wrap; }
+.uf h2 { margin: 0; font-size: 16px; }
+.uf-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px; }
+.uf-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-page); }
+.uf-row.first { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.uf-rank { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; background: var(--bg-hover); color: var(--text-2); }
+.uf-row.first .uf-rank { background: var(--accent); color: #fff; }
+.uf-main { min-width: 0; display: grid; gap: 4px; }
+.uf-title { display: flex; align-items: center; gap: 8px; font-weight: 650; flex-wrap: wrap; }
+.uf-title small { font-weight: 400; color: var(--text-3); font-size: 12.5px; }
+.uf-sub { font-size: 13px; color: var(--text-2); text-wrap: pretty; }
+.uf-more { font-size: 12px; color: var(--text-3); }
+.uf-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--track); margin: 4px 0 2px; }
+.uf-bar i { display: block; height: 100%; }
+.uf-bar .u { background: color-mix(in srgb, var(--text-3) 55%, transparent); }
+.uf-bar .p { background: var(--green); opacity: .7; }
+.uf-bar .l { background: repeating-linear-gradient(-45deg, var(--warn) 0 3px, color-mix(in srgb, var(--warn) 45%, transparent) 3px 6px); }
+.uf-big { text-align: right; white-space: nowrap; }
+.uf-big b { display: block; font-size: 22px; font-weight: 750; color: var(--warn); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.uf-big span { font-size: 12px; color: var(--text-3); }
+.uf-key { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-3); }
+.uf-key i { display: inline-block; width: 10px; height: 6px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.uf-part { display: grid; grid-template-columns: 76px minmax(0, 1fr) 76px; gap: 10px; align-items: center; font-size: 12px; color: var(--text-3); }
+.uf-part .uf-bar { margin: 0; }
+.uf-part span:last-child { text-align: right; }
+
+/* account cards */
+.accounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+.acard { position: relative; overflow: hidden; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+.ac-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.ac-id { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+.ac-icon { width: 34px; height: 34px; padding: 7px; border-radius: 10px; background: var(--bg-hover); display: inline-flex; flex: none; }
+.ac-icon svg { width: 100%; height: 100%; }
+.ac-name { font-family: var(--mono); font-weight: 700; font-size: 14px; word-break: break-all; }
+.ac-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 6px; font-size: 12px; }
+.ac-actions { display: flex; gap: 8px; align-items: center; flex: none; }
+.icon-btn { width: 36px; height: 36px; display: inline-grid; place-items: center; border-radius: 10px; border: 1px solid var(--border-strong); background: transparent; color: var(--text-2); transition-property: background-color, color, transform; transition-duration: 150ms; transition-timing-function: ease-out; }
+.icon-btn:hover { background: var(--bg-hover); color: var(--text-1); }
+.icon-btn:active { transform: scale(0.94); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; }
+.tile { background: var(--bg-page); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.t-top { font-size: 12.5px; color: var(--text-2); }
+.t-mid { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.t-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-num { font-size: 24px; font-weight: 750; letter-spacing: -0.01em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.t-num span { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--text-3); margin-left: 4px; }
+.t-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--text-3); min-height: 20px; white-space: nowrap; }
+.t-foot b { color: var(--text-2); font-weight: 500; }
+.spark { display: block; flex: none; }
+.chip-pace { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.chip-pace.warn { color: var(--warn); background: color-mix(in srgb, var(--yellow) 20%, transparent); }
+.chip-pace.low { color: var(--text-3); background: var(--bg-hover); }
+.proj { font-size: 12px; color: var(--warn); }
+.ac-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--text-2); padding-top: 12px; border-top: 1px solid var(--border); }
+.ac-foot .note { color: var(--text-1); }
+
+/* sidebar cards */
+.side-card { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.side-card > header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.55; text-wrap: pretty; }
+.fact { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
+.fact svg { flex: none; margin-top: 2px; color: var(--text-3); }
+.fact b { color: var(--text-1); font-weight: 600; }
+.note-box { font-size: 13px; line-height: 1.5; color: var(--text-2); background: var(--bg-hover); border-radius: 10px; padding: 10px 12px; text-wrap: pretty; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat { background: var(--bg-page); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+.stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--text-3); }
+.list { list-style: none; margin: 0; padding: 0; display: grid; }
+.list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.list li:first-child { border-top: 0; padding-top: 0; }
+.list .icon { width: 16px; height: 16px; }
+.list small { display: block; font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .plus { color: var(--green); font-weight: 700; font-variant-numeric: tabular-nums; }
+.list .time { color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.event-dot { width: 8px; height: 8px; border-radius: 50%; justify-self: center; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* usage */
+.usage-card { padding: 18px 20px; }
+.seg-ctl { display: inline-flex; padding: 3px; background: var(--bg-hover); border-radius: 10px; }
+.seg-ctl button { border: 0; background: transparent; padding: 4px 12px; border-radius: 8px; font-size: 13px; color: var(--text-2); transition-property: background-color, color; transition-duration: 150ms; }
+.seg-ctl button.on { background: var(--bg-card); color: var(--text-1); box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
+table.usage { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+table.usage th, table.usage td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+table.usage th { color: var(--text-3); font-weight: 500; font-size: 12px; }
+table.usage .n { text-align: right; font-family: var(--mono); white-space: nowrap; }
+table.usage tr.l0 td { font-weight: 700; font-family: var(--mono); padding-top: 14px; }
+table.usage tr.l1 td:first-child { padding-left: 26px; font-family: var(--mono); }
+table.usage tr.l2 td:first-child { padding-left: 48px; color: var(--text-2); font-family: var(--mono); }
+.table-wrap { overflow-x: auto; }
+
+.empty { padding: 32px; border: 1px dashed var(--border-strong); border-radius: 16px; color: var(--text-2); }
+.login { margin-top: 40px; max-width: 420px; padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-card); }
+.login input { width: 100%; margin: 12px 0; padding: 9px 12px; font: inherit; color: var(--text-1); background: var(--bg-page); border: 1px solid var(--border-strong); border-radius: 10px; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* narrow provider cards: smaller gauge, drop the mini bars so label/left/resets always fit */
+@container (max-width: 300px) {
+  .pc-list li { grid-template-columns: minmax(0, 1fr) 40px auto; }
+  .pc-list .minibar, .pc-list li.cap > span:nth-child(2) { display: none; }
+  .pc-hero { gap: 14px; }
+  .hero-num { font-size: 28px; }
+}
+@media (max-width: 700px) { .embedded .actions { margin-right: 0; } }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+'use strict';
+
+const ICONS = {
+  claude: '<svg viewBox="0 0 24 24"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.490-.644-1.032-.17-.619a2.970 2.970 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.030.456.898.243.832.091.255h.158V9.010l.128-1.706.237-2.095.230-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.020.225.79.522.474.638-.079.485-1.215.62-1.640-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.810 2.509 2.330.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.620h-.128v.17l.444.649 2.345 3.521.122 1.080-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.530.286-1.900.17-.632-.012-.042-.14.018-1.434 1.967-2.180 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.440-1.882.930-1.086-.006-.158h-.055L4.132 18.560l-1.130.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757"/></svg>',
+  codex: '<svg viewBox="0 0 24 24"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"/><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.550 4.550 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.240 4.240 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.330 1.183 2.170.289 1.425-.007 2.710-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.810 5.810 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.510 4.510 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.230a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.230z" fill="url(#ql-codex)"/><defs><linearGradient gradientUnits="userSpaceOnUse" id="ql-codex" x1="12" x2="12" y1="3" y2="21"><stop stop-color="#B1A7FF"/><stop offset=".5" stop-color="#7A9DFF"/><stop offset="1" stop-color="#3941FF"/></linearGradient></defs></svg>',
+  opencode: '<svg viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="currentColor" opacity=".9"/><path d="M7 7h10v10H7z" fill="none" stroke="var(--bg-page)" stroke-width="2.2"/><path d="M10 10h4v4h-4z" fill="var(--bg-page)"/></svg>',
+  all: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+  bellOff: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5"/><path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m2 2 20 20"/></svg>',
+};
+
+const PROVIDERS = [
+  { id: 'claude', label: 'Claude' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'opencode', label: 'OpenCode' },
+];
+
+const API = '/v0/management/quota-ledger/';
+const HOUR = 3600e3;
+const STATE_POLL_MS = 30e3;
+const SLOW_POLL_MS = 5 * 60e3; // history + usage
+const RESET_TTL_MS = 60 * 60e3; // reset-credit reads hit Anthropic's rate-limited usage endpoint: once an hour per credential
+const RETRY_WINDOW_MS = 10 * 60e3; // CPAMC's window for retrying an ambiguous Claude claim
+const NOTIFY_KINDS = new Set(['below', 'reset', 'error', 'runout', 'login', 'traffic']);
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Upstream endpoints used only by reset-credit actions (feature 10); copied from CPAMC utils/quota/constants.ts.
+const ANTHROPIC = 'https://api.anthropic.com';
+const CLAUDE_HEADERS = {
+  'User-Agent': 'claude-cli/2.1.280 (external, cli)',
+  Authorization: 'Bearer $TOKEN$',
+  'Content-Type': 'application/json',
+  'anthropic-beta': 'oauth-2025-04-20',
+};
+const CODEX_CREDITS_URL = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits';
+const CODEX_CONSUME_URL = `${CODEX_CREDITS_URL}/consume`;
+const CODEX_HEADERS = {
+  Authorization: 'Bearer $TOKEN$',
+  'Content-Type': 'application/json',
+  'User-Agent': 'codex-tui/0.149.1 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.149.1)',
+};
+
+const state = {
+  key: null,
+  needKey: false,
+  loadError: '', // no snapshot yet
+  fetchError: '', // refresh of an existing snapshot failed
+  snap: null, // GET /state payload
+  history: {}, // `${auth_index}|${window key}` -> [[ms, used], ...]
+  historyAt: 0,
+  alerts: [],
+  alertsAt: 0,
+  alertsReady: false, // first fetch only fills the panel, it never notifies
+  seen: new Set(),
+  usage: null,
+  usageHours: 24,
+  resets: {}, // auth_index -> {at, count, grant | expires, error}
+  ops: {}, // auth_index -> in-flight Claude claim (kept for ambiguous retries)
+  accountIds: null, // auth_index -> chatgpt account id
+  notes: {}, // auth_index -> last action result
+  busy: new Set(),
+  refreshing: false,
+  tab: 'all',
+  sort: 'ledger',
+  showEmails: false,
+  webhookNote: '',
+  waste: null, // GET /waste events: unused share of each window at its reset
+  bar: null, // GET /bar: status-bar preview
+  digest: '', // digest preview text
+  dirty: false,
+};
+
+/* ---------- helpers ---------- */
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = (v) => {
+  const n = typeof v === 'string' ? Number(v.trim()) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+};
+const clamp = (n) => Math.max(0, Math.min(100, n));
+const remaining = (w) => (w.used == null ? null : clamp(100 - w.used));
+const tone = (rem) => (rem === null ? 'var(--track)' : rem >= 70 ? 'var(--green)' : rem >= 30 ? 'var(--yellow)' : 'var(--red)');
+const pad = (n) => String(n).padStart(2, '0');
+const isRec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const uuid = () =>
+  crypto.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => ((Math.random() * 16) & (c === 'x' ? 15 : 3) | (c === 'x' ? 0 : 8)).toString(16));
+
+function relative(ms) {
+  const diff = ms - Date.now();
+  if (diff <= 0) return 'now';
+  const min = Math.round(diff / 60000);
+  if (min < 60) return `in ${min} min`;
+  const hours = Math.round(min / 60);
+  if (hours < 24) return `in ${hours} hour${hours === 1 ? '' : 's'}`;
+  const days = Math.round(hours / 24);
+  return `in ${days} day${days === 1 ? '' : 's'}`;
+}
+function ago(ms) {
+  const min = Math.round((Date.now() - ms) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  const hours = Math.round(min / 60);
+  return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
+}
+const absolute = (ms) => {
+  const d = new Date(ms);
+  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const dayTime = (ms) => {
+  const d = new Date(ms);
+  return `${DAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+function resetText(w) {
+  if (w.used === 0 && !w.reset_at) return 'No reset pending';
+  if (!w.reset_at) return '—';
+  return `<b>${relative(w.reset_at)}</b> · ${absolute(w.reset_at)}`;
+}
+const compact = (n) => (n < 1e3 ? String(n) : n < 1e6 ? `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)}M`);
+
+// The auth file's own email is masked inside its name: jane@example.com -> j•••@e•••.com
+function maskEmail(name, email, show = state.showEmails) {
+  if (show || !email || !name.includes(email)) return name;
+  const [local, domain] = email.split('@');
+  const tld = domain.slice(domain.lastIndexOf('.'));
+  return name.replace(email, `${local[0]}•••@${domain[0]}•••${tld}`);
+}
+
+function money(currency, n, decimals) {
+  const digits = decimals ?? (Number.isInteger(n) ? 0 : 2);
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', minimumFractionDigits: digits, maximumFractionDigits: 2 }).format(n);
+  } catch {
+    return `${n.toFixed(digits)} ${currency}`; // unknown currency code
+  }
+}
+// Sum one money field (spend | credits) over credentials, per currency.
+function moneyTotals(creds, field) {
+  const by = {};
+  for (const c of creds) {
+    const m = c[field];
+    if (!m) continue;
+    const t = (by[m.currency] ??= { currency: m.currency, used: 0, limit: 0, left: 0, reached: 0, off: 0 });
+    t.used += m.used || 0;
+    t.limit += m.limit || 0;
+    t.left += m.remaining ?? Math.max(0, (m.limit || 0) - (m.used || 0));
+    t.reached += m.limit_reached ? 1 : 0;
+    t.off += m.enabled === false ? 1 : 0;
+  }
+  return Object.values(by);
+}
+function moneyRows(creds) {
+  const rows = [
+    ...moneyTotals(creds, 'spend').map((t) => `<div class="money-row"><span class="lbl" title="Pay-as-you-go usage billed after the plan limits run out">Extra usage</span><span><b>${money(t.currency, t.used, 2)}</b> of ${money(t.currency, t.limit, 2)}</span>${t.reached ? '<span class="pill err">cap reached</span>' : t.off ? '<span class="pill off">off</span>' : ''}</div>`),
+    ...moneyTotals(creds, 'credits').map((t) => `<div class="money-row"><span class="lbl" title="Dollar credit pool; an empty pool does not block normal plan usage">Session credits</span><span><b>${money(t.currency, t.left)}</b> of ${money(t.currency, t.limit)} left</span>${t.left <= 0 ? '<span class="pill off">used up</span>' : ''}</div>`),
+  ];
+  return rows.length ? `<div class="money">${rows.join('')}</div>` : '';
+}
+
+// Share of the window already elapsed vs share of quota used; >1 means burning faster than time passes.
+function pace(w, now = Date.now()) {
+  if (w.used == null || !w.reset_at || !w.period_s || w.reset_at <= now) return null;
+  const elapsed = 1 - (w.reset_at - now) / (w.period_s * 1000);
+  if (elapsed < 0.05) return null; // too early in the window for a stable ratio
+  const ratio = Math.round((w.used / (Math.min(elapsed, 1) * 100)) * 1e3) / 1e3; // kills float noise at the 0.5/1.2 edges
+  return { elapsed, ratio, tone: ratio >= 1.2 ? 'warn' : ratio <= 0.5 ? 'low' : null };
+}
+
+// Linear fit of used% over the last <=24 h of the current window; returns the projected 100% time
+// only when it falls before reset_at. shortcut: ordinary least squares, no outlier handling.
+function project(points, w, now = Date.now()) {
+  if (!points || w.used == null || w.used >= 100 || !w.reset_at || w.reset_at <= now) return null;
+  let cut = now - 24 * HOUR;
+  if (w.period_s) cut = Math.max(cut, w.reset_at - w.period_s * 1000);
+  let pts = points.filter((p) => p[0] >= cut && p[1] != null);
+  for (let i = pts.length - 1; i > 0; i--) {
+    if (pts[i][1] < pts[i - 1][1] - 1) { pts = pts.slice(i); break; } // usage fell: a reset, ignore what came before
+  }
+  if (pts.length < 2 || pts[pts.length - 1][0] - pts[0][0] < 5 * 60e3) return null;
+  const t0 = pts[0][0];
+  const xs = pts.map((p) => (p[0] - t0) / HOUR);
+  const ys = pts.map((p) => p[1]);
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+  const sxx = xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+  const slope = xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / sxx;
+  if (!(slope > 0)) return null;
+  const hit = Math.max(now, t0 + ((100 - (my - slope * mx)) / slope) * HOUR);
+  return hit < w.reset_at ? hit : null;
+}
+
+// Upcoming resets, soonest first; `restore` is the used% that comes back.
+function timeline(creds, now = Date.now()) {
+  const out = [];
+  for (const c of creds) {
+    for (const w of c.windows || []) {
+      if (w.used > 0 && w.reset_at > now) out.push({ at: w.reset_at, restore: Math.round(w.used), provider: c.provider, label: w.label, name: c.name, email: c.email });
+    }
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+
+// Use it or lose it: quota still unused when a window resets is gone. Projected at the window's
+// average pace so far (once >=10% of it has elapsed), else assuming no further use.
+const isLong = (w, now) => (w.period_s ? w.period_s >= 86400 : w.reset_at - now > 24 * HOUR);
+function lossOf(c, w, now) {
+  if (w.key === 'credits' || w.used == null || !(w.reset_at > now)) return null;
+  const pc = pace(w, now);
+  const paced = Boolean(pc && pc.elapsed >= 0.1);
+  const lost = paced ? clamp(100 - w.used / pc.elapsed) : remaining(w);
+  if (lost < 5) return null;
+  // Another (unscoped) window at ~0% blocks this one until it resets.
+  const after = c.windows
+    .filter((v) => v !== w && v.key !== 'credits' && !v.key.startsWith('scoped:') && remaining(v) !== null && remaining(v) < 1 && v.reset_at > now)
+    .sort((a, b) => b.reset_at - a.reset_at)[0] || null;
+  if (after && after.reset_at >= w.reset_at) return null; // lost whatever you do
+  return { w, lost, paced, after };
+}
+// Accounts in spending order: earliest-expiring day+ budget first (earliest deadline first wastes least),
+// accounts with only short (e.g. 5-hour) windows at risk after them.
+function usePlan(creds, now) {
+  const rows = [];
+  for (const c of creds) {
+    if (c.disabled || !c.windows?.length) continue;
+    const risks = c.windows.map((w) => lossOf(c, w, now)).filter(Boolean)
+      // Model caps (scoped:*) sit inside the all-models window: headline the global one, show caps beside it.
+      .sort((a, b) => isLong(b.w, now) - isLong(a.w, now) || a.w.key.startsWith('scoped:') - b.w.key.startsWith('scoped:') || a.w.reset_at - b.w.reset_at);
+    if (risks.length) rows.push({ c, top: risks[0], rest: risks.slice(1) });
+  }
+  return rows.sort((a, b) => isLong(b.top.w, now) - isLong(a.top.w, now) || a.top.w.reset_at - b.top.w.reset_at);
+}
+
+// The dollar credit pool ("credits") is excluded: an empty pool does not block plan usage.
+function belowCount(creds, threshold) {
+  let n = 0;
+  for (const c of creds) if (!c.disabled) for (const w of c.windows || []) if (w.key !== 'credits' && w.used != null && 100 - w.used < threshold) n++;
+  return n;
+}
+
+// Embedded in CPAMC (same origin): mirror the count into the real tab title, restore it on unload.
+const parentDoc = (() => { try { return window.parent !== window ? window.parent.document : null; } catch { return null; } })();
+const parentTitle = parentDoc ? parentDoc.title : '';
+function setTitle(below) {
+  const prefix = below ? `(${below}) ` : '';
+  document.title = `${prefix}Quota Ledger`;
+  if (parentDoc) parentDoc.title = `${prefix}${parentTitle}`;
+}
+if (parentDoc) addEventListener('pagehide', () => { parentDoc.title = parentTitle; });
+
+const USAGE_FIELDS = ['requests', 'failed', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_creation_tokens'];
+const zero = () => Object.fromEntries(USAGE_FIELDS.map((f) => [f, 0]));
+const addTo = (t, r) => { for (const f of USAGE_FIELDS) t[f] += r[f] || 0; };
+// credential -> client key -> model, each level carrying its totals, busiest first.
+function groupUsage(rows) {
+  const root = new Map();
+  const child = (map, key, leaf) => {
+    if (!map.has(key)) map.set(key, { key, t: zero(), kids: leaf ? null : new Map() });
+    return map.get(key);
+  };
+  for (const r of rows) {
+    const a = child(root, r.auth_index, false);
+    const c = child(a.kids, r.client_key || '—', false);
+    const m = child(c.kids, r.model || '—', true);
+    for (const n of [a, c, m]) addTo(n.t, r);
+  }
+  const sorted = (map) => [...map.values()].sort((x, y) => y.t.requests - x.t.requests);
+  return sorted(root).map((a) => ({ ...a, kids: sorted(a.kids).map((c) => ({ ...c, kids: sorted(c.kids) })) }));
+}
+
+const credByIndex = (ai) => state.snap?.credentials.find((c) => c.auth_index === ai);
+const credLabel = (ai) => { const c = credByIndex(ai); return c ? maskEmail(c.name, c.email) : `removed account (${String(ai).slice(0, 6)}…)`; };
+// The dollar credit pool is shown as money; drop its window where a money row already covers it.
+const plainWindows = (c) => (c.credits ? c.windows.filter((w) => w.key !== 'credits') : c.windows);
+
+/* ---------- management key ---------- */
+
+// CPAMC persists its auth store with reversible XOR obfuscation (src/utils/encryption.ts): enc::v2 salts
+// with the host, the older enc::v1 also with the user agent.
+// The key is only present when "remember password" was checked at login.
+function cpamcKey() {
+  try {
+    const raw = localStorage.getItem('cli-proxy-auth');
+    if (!raw) return null;
+    let text = raw;
+    const v = /^enc::v([12])::/.exec(raw);
+    if (v) {
+      const salt = new TextEncoder().encode(`cli-proxy-api-webui::secure-storage|${location.host}${v[1] === '1' ? `|${navigator.userAgent}` : ''}`);
+      const bin = atob(raw.slice(v[0].length));
+      text = new TextDecoder().decode(Uint8Array.from(bin, (c, i) => c.charCodeAt(0) ^ salt[i % salt.length]));
+    }
+    const parsed = JSON.parse(text);
+    return (parsed.state || parsed).managementKey || null;
+  } catch {
+    return null;
+  }
+}
+
+class AuthError extends Error {}
+
+async function mgmt(path, body, method = body ? 'POST' : 'GET') {
+  const res = await fetch(path, {
+    method,
+    headers: { Authorization: `Bearer ${state.key}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) throw new AuthError('Management key rejected');
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+  return res.json();
+}
+
+// Host-proxied upstream call (used by reset-credit actions only).
+async function upstream(authIndex, method, url, header, data) {
+  const res = await mgmt('/v0/management/api-call', { auth_index: authIndex, method, url, header, ...(data ? { data } : {}) });
+  let body = res.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch { /* keep text */ }
+  }
+  return { status: num(res.status_code) ?? 0, body };
+}
+
+function requireKey() {
+  sessionStorage.removeItem('quota-ledger:key');
+  state.key = null;
+  state.needKey = true;
+  render();
+}
+
+/* ---------- loading ---------- */
+
+async function loadState(path = 'state', body) {
+  try {
+    state.snap = await mgmt(API + path, body);
+    state.loadError = state.fetchError = '';
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+    const msg = err.message || String(err);
+    if (state.snap) state.fetchError = msg;
+    else state.loadError = /HTTP 404/.test(msg) ? `${msg} — is the quota-ledger plugin loaded?` : msg;
+  }
+  render();
+}
+
+async function loadHistory() {
+  try {
+    const { series = [] } = await mgmt(`${API}history?hours=168`);
+    state.history = Object.fromEntries(series.map((s) => [`${s.auth_index}|${s.key}`, s.points]));
+    state.historyAt = Date.now();
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+  }
+  render();
+}
+
+async function loadUsage() {
+  const hours = state.usageHours;
+  try {
+    const data = await mgmt(`${API}usage?hours=${hours}`);
+    if (hours === state.usageHours) state.usage = { hours, ...data };
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+  }
+  render();
+}
+
+const eventKey = (e) => `${e.at}|${e.kind}|${e.auth_index}|${e.window}`;
+
+function notify(e) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try { new Notification(`Quota Ledger · ${e.kind}`, { body: e.message || `${e.name} ${e.label}`, tag: eventKey(e) }); } catch { /* unsupported context */ }
+}
+
+async function loadAlerts() {
+  try {
+    const { events = [] } = await mgmt(`${API}alerts?since=${state.alertsAt}`);
+    const fresh = events.filter((e) => !state.seen.has(eventKey(e)));
+    for (const e of fresh) state.seen.add(eventKey(e));
+    state.alerts = [...state.alerts, ...fresh].slice(-200);
+    for (const e of events) state.alertsAt = Math.max(state.alertsAt, e.at);
+    if (state.alertsReady) fresh.filter((e) => NOTIFY_KINDS.has(e.kind) && !e.muted).forEach(notify);
+    state.alertsReady = true;
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+  }
+  render();
+}
+
+async function refreshAll() {
+  state.refreshing = true;
+  render();
+  state.resets = {};
+  await loadState('refresh', {});
+  state.refreshing = false;
+  render();
+  loadHistory();
+  loadResets();
+}
+
+async function refreshOne(c) {
+  state.busy.add(c.auth_index);
+  render();
+  await loadState('refresh', { auth_index: c.auth_index });
+  state.busy.delete(c.auth_index);
+  render();
+}
+
+async function loadWaste() {
+  try {
+    const { events = [] } = await mgmt(`${API}waste?days=56`);
+    state.waste = events;
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+  }
+  render();
+}
+
+async function loadBar() {
+  try {
+    state.bar = await mgmt(`${API}bar`);
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+  }
+  render();
+}
+
+async function loadAll() {
+  await loadState();
+  if (!state.snap) return;
+  loadAlerts();
+  loadHistory();
+  loadUsage();
+  loadWaste();
+  loadBar();
+  loadResets();
+}
+
+async function tick() {
+  if (document.hidden || state.needKey || !state.key) return;
+  await loadState();
+  loadAlerts();
+  loadResets();
+  loadBar();
+  if (Date.now() - state.historyAt >= SLOW_POLL_MS) { loadHistory(); loadUsage(); loadWaste(); }
+}
+
+async function setMuted(c, muted) {
+  try {
+    state.snap = await mgmt(`${API}mute`, { auth_index: c.auth_index, muted });
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+    state.notes[c.auth_index] = err.message;
+  }
+  render();
+}
+
+// Disabling goes through CPA's own auth-file switch, the same one the Auth Files page uses.
+async function turnOff(c) {
+  if (!confirm(`Turn off ${maskEmail(c.name, c.email)}? Requests stop using it until you turn it back on in Auth Files.`)) return;
+  state.busy.add(c.auth_index);
+  render();
+  try {
+    await mgmt('/v0/management/auth-files/status', { name: c.name, disabled: true }, 'PATCH');
+    state.notes[c.auth_index] = 'Turned off.';
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+    state.notes[c.auth_index] = `Could not turn it off: ${err.message}`;
+  }
+  state.busy.delete(c.auth_index);
+  await loadState('refresh', { auth_index: c.auth_index });
+}
+
+// CPAMC pages live in its hash router; open them in the parent window when embedded.
+function openCpamc(route) {
+  const target = window.parent !== window ? window.parent : window;
+  if (target === window) location.href = `/management.html#/${route}`;
+  else target.location.hash = `#/${route}`;
+}
+
+async function dismiss(key) {
+  const all = key === '*';
+  const e = state.alerts.find((x) => eventKey(x) === key);
+  try {
+    await mgmt(`${API}alerts/dismiss`, all ? { all: true } : { at: e.at, kind: e.kind, auth_index: e.auth_index, window: e.window });
+    state.alerts = all ? [] : state.alerts.filter((x) => x !== e);
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+    state.webhookNote = err.message;
+  }
+  render();
+}
+
+/* ---------- reset credits (feature 10; CPAMC features/quota/providers/{claude,codex}) ---------- */
+
+const GRANT_ID_RE = /^[a-z0-9_-]{1,40}$/;
+const ORG_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CLAIM_RESULTS = ['reset', 'already_used', 'not_limited', 'cooldown', 'ineligible', 'unavailable'];
+const isCount = (v) => Number.isInteger(v) && v >= 0;
+const optTime = (v) => (v == null ? null : typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? v : undefined);
+const optBool = (v, fallback) => (v == null ? fallback : typeof v === 'boolean' ? v : undefined);
+
+function parseGrant(g) {
+  if (!isRec(g) || typeof g.id !== 'string' || !GRANT_ID_RE.test(g.id) || !isCount(g.resets_total) || !isCount(g.resets_left) || g.resets_left > g.resets_total) return null;
+  // Missing usability flags default to the refusing side, like CPAMC.
+  const grant = { id: g.id, left: g.resets_left, startsAt: optTime(g.starts_at), endsAt: optTime(g.ends_at), paused: optBool(g.paused, false), usableNow: optBool(g.usable_now, false), needsLimit: optBool(g.use_requires_limit, true) };
+  return Object.values(grant).includes(undefined) ? null : grant;
+}
+
+// Parses the `cedar_ember` block; null when missing or malformed.
+function parseGrantStatus(b) {
+  if (!isRec(b) || typeof b.eligible !== 'boolean') return null;
+  const raw = b.grants ?? [];
+  if (!Array.isArray(raw)) return null;
+  const grants = [];
+  const seen = new Set();
+  for (const r of raw) {
+    const g = parseGrant(r);
+    if (!g || seen.has(g.id)) return null;
+    seen.add(g.id);
+    grants.push(g);
+  }
+  const atLimit = optBool(b.at_limit, false);
+  const cooldownUntil = optTime(b.cooldown_until);
+  if (atLimit === undefined || cooldownUntil === undefined) return null;
+  return { eligible: b.eligible, atLimit, grants, cooldownUntil, nextGrantId: typeof b.next_grant_id === 'string' && seen.has(b.next_grant_id) ? b.next_grant_id : null };
+}
+
+function grantBlocker(s, id) {
+  if (!s.eligible) return 'ineligible';
+  const g = s.grants.find((x) => x.id === id);
+  if (!g) return 'unknown_grant';
+  if (g.paused) return 'paused';
+  if (!g.usableNow) return 'not_usable';
+  if (g.left <= 0) return 'exhausted';
+  if (g.needsLimit && !s.atLimit) return 'not_limited';
+  return null;
+}
+
+// Prefer the upstream recommendation; otherwise stable id order.
+function selectGrant(s, now = Date.now()) {
+  if (s.cooldownUntil && Date.parse(s.cooldownUntil) > now) return undefined;
+  const usable = s.grants.filter((g) => !grantBlocker(s, g.id) && (!g.startsAt || Date.parse(g.startsAt) <= now) && (!g.endsAt || Date.parse(g.endsAt) > now));
+  return usable.find((g) => g.id === s.nextGrantId) ?? usable.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
+}
+
+async function readAccount(authIndex, path) {
+  const r = await upstream(authIndex, 'GET', ANTHROPIC + path, CLAUDE_HEADERS);
+  if (r.status === 401 || r.status === 403) throw new Error('auth_error');
+  if (r.status === 429) throw new Error('rate_limited');
+  if (r.status < 200 || r.status >= 300 || !isRec(r.body)) throw new Error('upstream');
+  return r.body;
+}
+async function readGrants(authIndex) {
+  const status = parseGrantStatus((await readAccount(authIndex, '/api/oauth/usage?cedar_ember=1&skip_spend=1')).cedar_ember);
+  if (!status) throw new Error('malformed');
+  return status;
+}
+async function readOrg(authIndex) {
+  const uuid = (await readAccount(authIndex, '/api/oauth/profile')).organization?.uuid;
+  if (typeof uuid !== 'string' || !ORG_RE.test(uuid)) throw new Error('malformed');
+  return uuid.toLowerCase();
+}
+
+// Spends one Claude reset grant. An ambiguous outcome keeps its request id in state.ops so a retry
+// inside RETRY_WINDOW_MS cannot double-spend.
+async function claimClaude(c) {
+  const ai = c.auth_index;
+  let op = state.ops[ai];
+  if (op?.code) op = undefined;
+  if (op && Date.now() - op.createdAt >= RETRY_WINDOW_MS) throw new Error('expired');
+  const wasRetry = Boolean(op);
+  const org = await readOrg(ai);
+  if (op && op.org !== org) throw new Error('identity');
+  if (!op) {
+    const grant = selectGrant(await readGrants(ai));
+    if (!grant) throw new Error('blocked');
+    op = state.ops[ai] = { grantId: grant.id, org, requestId: uuid(), createdAt: Date.now() };
+  }
+  let code;
+  try {
+    const r = await upstream(ai, 'POST', `${ANTHROPIC}/api/organizations/${org}/reset_rate_limits`, CLAUDE_HEADERS, JSON.stringify({ program: 'cedar_ember', grant_id: op.grantId, request_id: op.requestId }));
+    if (r.status === 429) code = 'rate_limited';
+    else if (r.status === 401 || r.status === 403) code = 'auth_error';
+    else if (r.status >= 200 && r.status < 300 && isRec(r.body) && CLAIM_RESULTS.includes(r.body.result)) code = r.body.result;
+  } catch (err) {
+    if (err instanceof AuthError) throw err;
+  }
+  if (!code) throw new Error('unknown'); // the proxy may have sent the claim anyway
+  // A refusal on a retry cannot prove the earlier ambiguous POST did not spend.
+  if (!wasRetry || code === 'reset' || code === 'already_used') op.code = code;
+  return op.code ? code : 'unknown';
+}
+
+async function accountId(authIndex) {
+  if (!state.accountIds) {
+    const { files = [] } = await mgmt('/v0/management/auth-files');
+    state.accountIds = Object.fromEntries(files.map((f) => [f.auth_index, f.id_token?.chatgpt_account_id || '']));
+  }
+  return state.accountIds[authIndex] || '';
+}
+async function codexHeaders(authIndex) {
+  const id = await accountId(authIndex);
+  return id ? { ...CODEX_HEADERS, 'Chatgpt-Account-Id': id } : { ...CODEX_HEADERS };
+}
+
+async function readCodexCredits(c) {
+  const header = { ...(await codexHeaders(c.auth_index)), Accept: 'application/json', 'OpenAI-Beta': 'codex-1', Originator: 'Codex Desktop' };
+  const r = await upstream(c.auth_index, 'GET', CODEX_CREDITS_URL, header);
+  if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
+  if (!isRec(r.body) || !['credits', 'available_count', 'availableCount'].some((k) => k in r.body)) throw new Error('invalid payload');
+  const expires = (Array.isArray(r.body.credits) ? r.body.credits : [])
+    .filter((x) => isRec(x) && (x.reset_type ?? x.resetType) === 'codex_rate_limits' && x.status === 'available')
+    .map((x) => Date.parse(x.expires_at ?? x.expiresAt))
+    .filter(Number.isFinite);
+  return { count: num(r.body.available_count ?? r.body.availableCount) ?? (expires.length || null), expires: expires.length ? Math.min(...expires) : null };
+}
+
+async function readResets(c) {
+  try {
+    if (c.provider === 'codex') return { at: Date.now(), ...(await readCodexCredits(c)) };
+    const s = await readGrants(c.auth_index);
+    return { at: Date.now(), count: s.grants.reduce((n, g) => n + g.left, 0), grant: selectGrant(s)?.id ?? null };
+  } catch (err) {
+    if (err instanceof AuthError) throw err;
+    return { at: Date.now(), error: err.message };
+  }
+}
+
+// Sequential on purpose: each read is an upstream call through the host.
+async function loadResets() {
+  if (state.resetsBusy) return;
+  state.resetsBusy = true;
+  try {
+    for (const c of state.snap?.credentials ?? []) {
+      if ((c.provider !== 'claude' && c.provider !== 'codex') || c.disabled || c.status === 'pending' || limited(c)) continue;
+      const r = state.resets[c.auth_index];
+      if (r && Date.now() - r.at < RESET_TTL_MS) continue;
+      state.resets[c.auth_index] = await readResets(c);
+      render();
+    }
+  } catch (err) {
+    if (err instanceof AuthError) requireKey();
+  } finally {
+    state.resetsBusy = false;
+  }
+}
+
+async function claimCodex(c) {
+  const header = await codexHeaders(c.auth_index);
+  const r = await upstream(c.auth_index, 'POST', CODEX_CONSUME_URL, header, JSON.stringify({ redeem_request_id: uuid() }));
+  if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
+  const code = isRec(r.body) ? r.body.code : undefined;
+  if (code !== 'reset' && code !== 'already_redeemed') throw new Error('not_confirmed');
+  try {
+    // Redeeming does not clear the host's cooldown on this credential; CPAMC does it right after.
+    const res = await mgmt('/v8/management/routing/cooldown/reset', { auth_index: c.auth_index });
+    if (res.status !== 'ok' || res.auth_index !== c.auth_index) throw new Error('bad response');
+  } catch (err) {
+    if (err instanceof AuthError) throw err;
+    throw new Error('cooldown_failed');
+  }
+  return 'reset';
+}
+
+const RESET_MESSAGES = {
+  reset: 'Quota reset',
+  already_used: 'That reset was already applied',
+  not_limited: 'Not at a limit — nothing to reset',
+  cooldown: 'Resets are on cooldown',
+  ineligible: 'This account is not eligible for resets',
+  unavailable: 'Reset unavailable',
+  rate_limited: 'Rate limited — try again later',
+  auth_error: 'Authorisation refused upstream',
+  blocked: 'No usable reset right now',
+  expired: 'Retry window expired; the earlier claim stays unresolved',
+  identity: 'Organisation changed since the earlier claim',
+  unknown: 'Outcome unknown — use Retry reset within 10 minutes to resend the same request',
+  not_confirmed: 'Upstream did not confirm the reset',
+  cooldown_failed: 'Credit redeemed, but clearing the cooldown failed — clear it from CPAMC',
+};
+
+async function useReset(c) {
+  const ai = c.auth_index;
+  if (state.busy.has(ai)) return;
+  const pending = state.ops[ai] && !state.ops[ai].code;
+  const name = maskEmail(c.name, c.email);
+  const ask = pending
+    ? `A previous reset request for ${name} may or may not have gone through. Retry with the same request ID?`
+    : `Use one ${c.provider === 'codex' ? 'Codex rate-limit reset credit' : 'Claude reset grant'} on ${name}? This spends a reset.`;
+  if (!confirm(ask)) return;
+  state.busy.add(ai);
+  render();
+  let note;
+  try {
+    const code = c.provider === 'codex' ? await claimCodex(c) : await claimClaude(c);
+    note = RESET_MESSAGES[code] || code;
+  } catch (err) {
+    if (err instanceof AuthError) { state.busy.delete(ai); return requireKey(); }
+    note = RESET_MESSAGES[err.message] || `Reset failed: ${err.message}`;
+  }
+  state.notes[ai] = note;
+  delete state.resets[ai];
+  state.busy.delete(ai);
+  await refreshOne(c);
+  loadResets();
+}
+
+/* ---------- rendering ---------- */
+
+const icon = (name) => `<span class="icon">${ICONS[name]}</span>`;
+
+function visibleCreds() {
+  const list = (state.snap?.credentials ?? []).filter((c) => state.tab === 'all' || c.provider === state.tab);
+  if (state.sort === 'ledger') return list;
+  const score = (c) => {
+    const rems = c.windows.map(remaining).filter((r) => r !== null);
+    const resets = c.windows.map((w) => w.reset_at).filter(Boolean);
+    return state.sort === 'lowest' ? (rems.length ? Math.min(...rems) : Infinity) : resets.length ? Math.min(...resets) : Infinity;
+  };
+  return [...list].sort((a, b) => score(a) - score(b));
+}
+
+// Window keys in first-seen order across a provider's credentials.
+function windowKeys(creds) {
+  const seen = new Map();
+  for (const c of creds) for (const w of c.windows) if (!seen.has(w.key)) seen.set(w.key, w.label);
+  return [...seen];
+}
+
+function aggregate(creds, key) {
+  const wins = creds.map((c) => c.windows.find((w) => w.key === key) || null);
+  const loaded = wins.filter((w) => w && remaining(w) !== null);
+  const resets = loaded.map((w) => w.reset_at).filter((r) => r && r > Date.now());
+  return {
+    total: loaded.reduce((s, w) => s + remaining(w), 0),
+    max: creds.length * 100,
+    any: loaded.length > 0,
+    count: loaded.length,
+    segments: wins.map((w) => (w ? remaining(w) : null)),
+    reset: resets.length ? Math.min(...resets) : null,
+  };
+}
+
+const ACCENT = { claude: '#D97757', codex: '#7A9DFF', opencode: 'var(--text-2)' };
+const APP_NAMES = { 'claude-cli': 'Claude Code', codex: 'Codex CLI', opencode: 'OpenCode' };
+const appName = (ua) => APP_NAMES[ua.toLowerCase()] || ua;
+const listJoin = (a) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const SVG_SHIELD = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+const SVG_PAUSE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/></svg>';
+
+// Compact countdown for dense lists: "in 40 min", "in 5 h", "in 6 d".
+function short(ms, now = Date.now()) {
+  const min = Math.round((ms - now) / 60000);
+  if (min <= 0) return 'now';
+  if (min < 60) return `in ${min} min`;
+  const h = Math.round(min / 60);
+  return h < 48 ? `in ${h} h` : `in ${Math.round(h / 24)} d`;
+}
+
+function donut(rem, size = 84) {
+  const half = size / 2, r = half - 6, c = 2 * Math.PI * r;
+  const arc = rem > 0 ? `<circle cx="${half}" cy="${half}" r="${r}" fill="none" stroke="${tone(rem)}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${((c * rem) / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${half} ${half})"/>` : '';
+  return `<svg class="donut" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${rem == null ? 'no data' : `${Math.round(rem)}% left`}"><circle cx="${half}" cy="${half}" r="${r}" fill="none" stroke="var(--track)" stroke-width="8"/>${arc}</svg>`;
+}
+
+const isLow = (c) => c.windows.some((w) => w.key !== 'credits' && remaining(w) !== null && remaining(w) < (state.snap.settings.alert_below_percent || 20));
+// The server stops calling a rate-limited account until retry_at; the numbers shown are the last good ones.
+const limited = (c) => c.retry_at > Date.now();
+const issueHtml = (c, prefix = '') => limited(c)
+  ? `<div class="issue wait">${prefix}${esc(c.error.replace(/\.$/, ''))} · showing the last known numbers, next check ${esc(short(c.retry_at, Date.now()))}</div>`
+  : `<div class="issue">${prefix}${esc(c.error)}</div>`;
+function credStatus(c) {
+  if (c.disabled) return ['off', 'Disabled'];
+  if (c.login) return ['err', c.provider === 'opencode' ? 'Key rejected' : 'Sign in again'];
+  if (limited(c)) return ['warn', 'Rate limited'];
+  if (c.status === 'error') return ['err', 'Error'];
+  if (c.status === 'pending') return ['off', 'Waiting'];
+  if (c.reserved) return ['warn', 'In reserve'];
+  if (isLow(c)) return ['warn', 'Running low'];
+  return ['ok', 'Healthy'];
+}
+function providerStatus(creds) {
+  const errors = creds.filter((c) => c.status === 'error' && !limited(c)).length;
+  if (errors) return ['err', plural(errors, 'issue')];
+  if (creds.some(limited)) return ['warn', 'Rate limited'];
+  const low = creds.filter((c) => c.status === 'ok' && isLow(c)).length;
+  if (low) return ['warn', `${low} running low`];
+  if (creds.every((c) => c.status === 'pending' || c.disabled)) return ['off', 'Waiting'];
+  return ['ok', 'Healthy'];
+}
+
+function renderCard(p, creds, now) {
+  const keys = windowKeys(creds.map((c) => ({ windows: plainWindows(c) })));
+  const n = creds.length;
+  const [st, stText] = providerStatus(creds);
+  const head = `<header class="pc-head"><span class="pc-name">${icon(p.id)}${esc(p.label)}<small>${plural(n, 'account')}</small></span><span class="pill dot ${st}">${esc(stText)}</span></header>`;
+  const issues = creds.filter((c) => c.status === 'error').map((c) => issueHtml(c, n > 1 ? `${esc(maskEmail(c.name, c.email))}: ` : '')).join('');
+  const open = `<section class="surface pcard" style="--accent:${ACCENT[p.id]}">${head}`;
+  if (!keys.length) {
+    const why = creds.some((c) => c.status === 'pending') ? 'Waiting for the first check…' : 'The provider returned no limits.';
+    return `${open}<div class="pc-hero">${donut(null)}<div class="pc-hero-text"><div class="eyebrow">No quota data</div><div class="sub">${why}</div></div></div>${issues}</section>`;
+  }
+  const [k0, l0] = keys[0];
+  const a = aggregate(creds, k0);
+  const avg = a.count ? a.total / a.count : null;
+  const multi = n > 1;
+  const segs = multi ? `<div class="segments" title="One segment per account">${a.segments.map((r) => `<div class="seg"><i style="width:${r ?? 0}%;background:${tone(r)}"></i></div>`).join('')}</div>` : '';
+  const across = multi && a.count ? `${Math.round(a.total)}% of ${a.max}% across ${n} accounts · ` : '';
+  const hero = `<div class="pc-hero">${donut(avg)}<div class="pc-hero-text">
+      <div class="eyebrow">${esc(l0)}</div>
+      <div class="hero-num">${avg === null ? '--' : `${Math.round(avg)}%`}<span>${multi ? 'left on average' : 'left'}</span></div>
+      <div class="sub">${across}${a.reset ? `resets ${relative(a.reset)} · ${absolute(a.reset)}` : 'no reset pending'}</div>${segs}</div></div>`;
+  const rows = keys.slice(1).map(([k, label]) => {
+    const o = aggregate(creds, k);
+    const r = o.count ? o.total / o.count : null;
+    return `<li title="${o.reset ? `resets ${absolute(o.reset)}` : ''}"><span class="lbl">${esc(label)}</span><span class="minibar"><i style="width:${r ?? 0}%;background:${tone(r)}"></i></span><span class="pct">${r === null ? '--' : `${Math.round(r)}%`}</span><span class="when">${o.reset ? short(o.reset, now) : '—'}</span></li>`;
+  }).join('');
+  const list = rows ? `<ul class="pc-list"><li class="cap"><span>Other limits</span><span></span><span class="pct">Left</span><span class="when">Resets</span></li>${rows}</ul>` : '';
+  return `${open}${hero}${list}${moneyRows(creds)}${issues}</section>`;
+}
+
+function sparkline(points, w, now) {
+  if (!points) return '';
+  const span = Math.min(w.period_s || 7 * 86400, 7 * 86400) * 1000;
+  const from = now - span;
+  const pts = points.filter((p) => p[0] >= from && p[1] != null);
+  if (pts.length < 2) return '';
+  const W = 64, H = 18;
+  const d = pts.map(([t, u]) => `${(((t - from) / span) * W).toFixed(1)},${(H - 1 - (clamp(u) / 100) * (H - 2)).toFixed(1)}`).join(' ');
+  const last = pts[pts.length - 1][1];
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="usage over the last days"><polyline points="${d}" fill="none" stroke="${tone(clamp(100 - last))}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+function renderWindow(c, w, now) {
+  const r = remaining(w);
+  const pc = pace(w, now);
+  const detail = pc ? `${Math.round(w.used)}% used with ${Math.round(pc.elapsed * 100)}% of the window gone` : '';
+  const chip = pc?.tone === 'warn' ? `<span class="chip-pace warn" title="${esc(detail)}">Using fast · ${pc.ratio.toFixed(1)}×</span>` : pc?.tone === 'low' ? `<span class="chip-pace low" title="${esc(detail)}">Easy pace</span>` : '';
+  const points = state.history[`${c.auth_index}|${w.key}`];
+  const hit = project(points, w, now);
+  const when = w.used === 0 && !w.reset_at ? 'Not started yet' : w.reset_at ? `Resets <b>${short(w.reset_at, now)}</b>` : '—';
+  return `<div class="tile" title="${w.reset_at ? `Resets ${absolute(w.reset_at)}` : ''}">
+    <div class="t-top t-label">${esc(w.label)}</div>
+    <div class="t-mid"><div class="t-num"${r !== null && r < 30 ? ` style="color:${tone(r)}"` : ''}>${r === null ? '--' : `${Math.round(r)}%`}<span>left</span></div>${chip}</div>
+    <div class="track"><i style="width:${r ?? 0}%;background:${tone(r)}"></i></div>
+    <div class="t-foot"><span>${when}</span>${sparkline(points, w, now)}</div>
+    ${hit ? `<div class="proj">Runs out ~${dayTime(hit)}, before it resets</div>` : ''}
+  </div>`;
+}
+
+function resetInfo(c) {
+  const r = state.resets[c.auth_index];
+  if (!r || r.error) return { line: '', action: '' };
+  if (c.provider === 'codex') {
+    if (!(r.count > 0)) return { line: '', action: '' };
+    const next = r.expires ? ` · next expires ${relative(r.expires)}` : '';
+    return { line: `Reset credits: <strong>${r.count}</strong>${next}`, action: 'Use reset' };
+  }
+  const pending = state.ops[c.auth_index] && !state.ops[c.auth_index].code;
+  if (!(r.count > 0) && !pending) return { line: '', action: '' };
+  return { line: `Reset grants: <strong>${r.count}</strong>`, action: pending ? 'Retry reset' : r.grant ? 'Use reset' : '' };
+}
+
+function loginHtml(c) {
+  const oauth = c.provider !== 'opencode';
+  const fix = oauth
+    ? `<button class="btn small" data-open="oauth">Sign in again</button><button class="btn small" data-off="${esc(c.auth_index)}">Turn off</button>`
+    : '<button class="btn small" data-open="ai-providers">Edit key</button>';
+  return `<div class="issue relogin"><span><b>${oauth ? 'Login expired' : 'API key rejected'}</b> · ${esc(c.login_reason || '')}</span><div class="btn-row">${fix}</div></div>`;
+}
+
+// Live traffic through the proxy: last 24 h of outcomes, the last failure, and whether routing skips it.
+function healthHtml(c, now) {
+  const h = c.health;
+  if (!h || c.disabled) return [];
+  const d = h.day || {};
+  const out = [];
+  if (d.requests) {
+    const kinds = [d.rate_limited && `${d.rate_limited} × 429`, d.auth_failed && `${d.auth_failed} × 401/403`, d.server_errors && `${d.server_errors} × 5xx`].filter(Boolean);
+    const failed = d.failed ? ` · <span class="${d.failed / d.requests > 0.1 ? 'err' : ''}">${compact(d.failed)} failed${kinds.length ? ` (${kinds.join(', ')})` : ''}</span>` : '';
+    const avg = d.timed ? ` · avg ${(d.latency_ms / d.timed / 1000).toFixed(1)} s` : '';
+    out.push(`<span title="Requests through the proxy in the last 24 hours">24 h: <b>${compact(d.requests)}</b> requests${failed}${avg}</span>`);
+  }
+  if (h.last_fail && now - h.last_fail_at < 24 * HOUR) out.push(`<span class="muted" title="${absolute(h.last_fail_at)}">Last failure ${ago(h.last_fail_at)}: ${esc(h.last_fail)}</span>`);
+  if (h.avoid_until > now) out.push(`<span class="pill warn" title="Smart routing tries this account's siblings first">Skipped by routing${h.avoid_until - now < 24 * HOUR ? ` ${short(h.avoid_until, now)}` : ''}</span>`);
+  return out;
+}
+
+function renderAccount(c, now) {
+  const [st, stText] = credStatus(c);
+  const rs = resetInfo(c);
+  const busy = state.busy.has(c.auth_index) || state.refreshing;
+  let body = '';
+  if (c.status === 'disabled') body = '<div class="muted">This account is disabled, so its quota is not checked.</div>';
+  else if (!c.windows.length) body = c.status === 'pending' ? '<div class="muted">Waiting for the first check…</div>' : c.error ? '' : '<div class="muted">The provider returned no limits for this account.</div>';
+  else body = `<div class="tiles">${plainWindows(c).map((w) => renderWindow(c, w, now)).join('')}</div>`;
+  const foot = healthHtml(c, now);
+  if (rs.line) foot.push(`<span>${rs.line}</span>`);
+  if (state.notes[c.auth_index]) foot.push(`<span class="note">${esc(state.notes[c.auth_index])}</span>`);
+  const stale = c.fetched_at && now - c.fetched_at > 3 * (state.snap.poller.interval_s || 300) * 1000;
+  const updated = c.fetched_at && !c.disabled ? `<span class="${stale ? 'stale' : 'muted'}" title="${absolute(c.fetched_at)}">checked ${ago(c.fetched_at)}</span>` : '';
+  const reserveTip = c.reserved ? ' title="Smart routing keeps this account\'s last quota for the reserved apps"' : '';
+  const ai = esc(c.auth_index);
+  const mute = `<button class="icon-btn" data-mute="${ai}" aria-pressed="${c.muted ? 'true' : 'false'}" title="${c.muted ? 'Alerts muted: listed here, not sent. Click to unmute.' : 'Mute alerts for this account'}" aria-label="${c.muted ? 'Unmute alerts' : 'Mute alerts'}">${c.muted ? ICONS.bellOff : ICONS.bell}</button>`;
+  const actions = c.disabled
+    ? ''
+    : `${rs.action ? `<button class="btn small" data-reset="${ai}" ${busy ? 'disabled' : ''}>${rs.action}</button>` : ''}${mute}<button class="icon-btn" data-refresh="${ai}" title="Check quota now" aria-label="Check quota now" ${busy ? 'disabled' : ''}><span class="${busy ? 'spin' : ''}" style="display:inline-flex">${ICONS.refresh}</span></button>`;
+  return `<article class="surface acard" style="--accent:${ACCENT[c.provider]}">
+    <header class="ac-head"><div class="ac-id"><span class="ac-icon">${ICONS[c.provider]}</span><div style="min-width:0">
+      <div class="ac-name">${esc(maskEmail(c.name, c.email))}</div>
+      <div class="ac-meta">${c.plan ? `<span class="pill">${esc(c.plan)}</span>` : ''}<span class="pill dot ${st}"${reserveTip}>${esc(stText)}</span>${c.muted ? '<span class="pill off">Muted</span>' : ''}${updated}</div>
+    </div></div><div class="ac-actions">${actions}</div></header>
+    ${c.login ? loginHtml(c) : c.error ? issueHtml(c) : ''}${body}${moneyRows([c])}
+    ${foot.length ? `<div class="ac-foot">${foot.join('')}</div>` : ''}
+  </article>`;
+}
+
+const MODE_TEXT = {
+  off: 'Off. Requests take turns between accounts the usual way.',
+  'most-remaining': 'Each request goes to the account that has the most quota left.',
+  'soonest-reset': "Uses up the account that resets soonest first, so its quota doesn't go to waste.",
+  'use-first': 'Spends first the quota that would otherwise be lost at the next weekly reset, in the "Use first" order.',
+};
+const DAY_NAMES = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
+function ruleText(r) {
+  const when = [r.days, r.hours].filter(Boolean).join(' ') || 'Always';
+  const prov = r.provider && (PROVIDERS.find((p) => p.id === r.provider.toLowerCase())?.label || r.provider);
+  const app = r.client && (r.client.startsWith('!') ? `apps other than ${appName(r.client.slice(1))}` : appName(r.client));
+  const who = [prov, r.model && `model “${r.model}”`, app].filter(Boolean).join(', ');
+  const what = [r.mode && (r.mode === 'off' ? 'normal rotation' : r.mode), r.reserve_floor_percent != null && `keep the last ${r.reserve_floor_percent}%`].filter(Boolean).join(', ');
+  return `${when}${who ? ` · ${who}` : ''} → ${what}`;
+}
+const fact = (svg, html) => `<div class="fact">${svg}<span>${html}</span></div>`;
+
+function renderRouting() {
+  const { settings: s, scheduler: sc, credentials: creds } = state.snap;
+  const mode = sc.mode || s.scheduler_mode;
+  const on = mode !== 'off';
+  const parts = [`<p class="lead">${esc(MODE_TEXT[mode] || mode)}</p>`];
+  if (on) {
+    const apps = listJoin((s.reserve_exempt_user_agents || []).map((u) => esc(appName(u))));
+    parts.push(s.reserve_floor_percent > 0
+      ? fact(SVG_SHIELD, `Each account keeps its last <b>${s.reserve_floor_percent}%</b> for <b>${apps || 'no app'}</b>. Other apps move to another account once it drops below that.`)
+      : fact(SVG_SHIELD, 'No reserve: every app can use an account all the way down to 0%.'));
+    const held = creds.filter((c) => c.reserved);
+    if (held.length) parts.push(fact(SVG_PAUSE, `Holding back <b>${plural(held.length, 'account')}</b>: ${held.map((c) => esc(maskEmail(c.name, c.email))).join(', ')}`));
+    const skipped = creds.filter((c) => c.health?.avoid_until > Date.now());
+    if (skipped.length) parts.push(fact(SVG_PAUSE, `Trying others first: <b>${skipped.map((c) => esc(maskEmail(c.name, c.email))).join(', ')}</b> (failing in live traffic)`));
+    const rules = s.routing_rules || [];
+    if (rules.length) parts.push(`<div class="rules"><div class="hint">Rules, first match wins:</div><ol>${rules.map((r) => `<li class="${r.active ? 'on' : ''}">${esc(ruleText(r))}${r.active ? ' <span class="pill dot ok">now</span>' : ''}</li>`).join('')}</ol></div>`);
+    const active = creds.filter((c) => !c.disabled);
+    if (!PROVIDERS.some((p) => active.filter((c) => c.provider === p.id).length > 1)) {
+      parts.push('<div class="note-box">Smart routing picks between accounts of the <b>same</b> provider. You have one account per provider, so there is nothing to choose yet. It starts working as soon as you add a second account.</div>');
+    }
+    parts.push(`<div class="stats"><div class="stat" title="Requests sent to an account because of its quota"><b>${sc.picks}</b><span>chosen by quota</span></div><div class="stat" title="Requests where quota was unknown or every account was held back, so the normal rotation decided"><b>${sc.fallbacks}</b><span>normal rotation</span></div></div>`);
+    const lp = sc.last_pick;
+    if (lp) parts.push(`<div class="hint">Last choice ${ago(lp.at)}: <b>${esc(lp.model || 'a request')}</b> went to <b>${esc(credLabel(lp.auth_index))}</b> (${esc(lp.reason)})</div>`);
+  }
+  parts.push('<div class="hint">Change these settings in CPAMC → Plugins → quota-ledger.</div>');
+  return `<section class="surface side-card"><header><h2>Smart routing</h2><span class="pill dot ${on ? 'ok' : 'off'}">${on ? 'On' : 'Off'}</span></header>${parts.join('')}</section>`;
+}
+
+function renderUseFirst(shown, now) {
+  if (!shown.some((c) => c.windows?.length)) return '';
+  const plan = usePlan(shown, now);
+  const many = (id) => shown.filter((c) => c.provider === id).length > 1;
+  const pname = (id) => PROVIDERS.find((p) => p.id === id)?.label ?? id;
+  const lbl = (w) => w.label.replace(/ limit$/i, '');
+  const amount = (r) => `${r.paced ? '~' : 'up to '}${Math.round(r.lost)}%`;
+  const rows = plan.slice(0, 6).map(({ c, top, rest }, i) => {
+    const w = top.w;
+    const caps = top.w.key.startsWith('scoped:') ? [] : rest.filter((r) => r.w.key.startsWith('scoped:'));
+    const bar = (r) => {
+      const willUse = Math.max(0, 100 - r.w.used - r.lost);
+      return `<div class="uf-bar" title="${Math.round(r.w.used)}% used · ${Math.round(willUse)}% you'll still use · ${Math.round(r.lost)}% lost"><i class="u" style="width:${r.w.used}%"></i><i class="p" style="width:${willUse}%"></i><i class="l" style="width:${r.lost}%"></i></div>`;
+    };
+    const capName = (r) => lbl(r.w).replace(lbl(w), '').trim() || lbl(r.w);
+    const bars = caps.length
+      ? [[top, 'All models'], ...caps.map((r) => [r, capName(r)])].map(([r, name]) => `<div class="uf-part"><span>${esc(name)}</span>${bar(r)}<span>${amount(r)} lost</span></div>`).join('')
+      : bar(top);
+    const capNote = caps.length ? ` ${caps.map((r) => esc(capName(r))).join(', ')} also ${caps.length > 1 ? 'have their' : 'has its'} own cap inside it` : '';
+    const badge = i ? '' : top.after ? `<span class="pill warn">Use after ${esc(lbl(top.after))} resets</span>` : '<span class="pill dot ok">Use now</span>';
+    const who = many(c.provider) ? `<small>${esc(maskEmail(c.name, c.email))}</small>` : c.plan ? `<span class="pill">${esc(c.plan)}</span>` : '';
+    const basis = top.paced ? 'at your pace so far' : "if you don't use it";
+    const blocked = top.after ? `. Usable once ${esc(lbl(top.after))} resets ${short(top.after.reset_at, now)}` : '';
+    const more = rest.filter((r) => !caps.includes(r)).map((r) => `${esc(lbl(r.w))} ${amount(r)} ${short(r.w.reset_at, now)}`).join(' · ');
+    return `<li class="uf-row${i ? '' : ' first'}" style="--accent:${ACCENT[c.provider]}">
+      <span class="uf-rank">${i + 1}</span>
+      <div class="uf-main">
+        <div class="uf-title">${icon(c.provider)}${esc(pname(c.provider))}${who}${badge}</div>
+        <div class="uf-sub">${top.paced ? '~' : 'Up to '}<b>${Math.round(top.lost)}%</b> of the ${esc(lbl(w))} limit${caps.length ? ' (all models)' : ''} goes unused when it resets, ${basis}${blocked}.${capNote ? capNote + '.' : ''}</div>
+        ${bars}
+        ${more ? `<div class="uf-more">Also expiring: ${more}</div>` : ''}
+      </div>
+      <div class="uf-big"><b>${top.paced ? '~' : ''}${Math.round(top.lost)}%</b><span>lost ${short(w.reset_at, now)}</span></div>
+    </li>`;
+  }).join('');
+  const s = state.snap.settings;
+  const pooled = PROVIDERS.some((p) => shown.filter((c) => c.provider === p.id && !c.disabled).length > 1);
+  const tip = pooled && s.scheduler_mode !== 'use-first'
+    ? '<div class="uf-more">Tip: set Smart routing to <b>use-first</b> and requests follow this order between accounts of the same provider automatically.</div>' : '';
+  return `<section class="surface uf"><header><h2>Use first</h2><span class="hint">Quota you don't use before a limit resets is lost. Spend in this order: what expires soonest first.</span></header>
+    ${rows ? `<ol class="uf-list">${rows}</ol>
+    <div class="uf-key"><span><i style="background:color-mix(in srgb, var(--text-3) 55%, transparent)"></i>used</span><span><i style="background:var(--green);opacity:.7"></i>you'll still use at this pace</span><span><i style="background:var(--warn)"></i>lost at reset</span><span>% are of each plan's own limit</span></div>`
+    : '<div class="muted">Nothing at risk: at your pace so far, every account uses its quota before it resets.</div>'}${tip}</section>`;
+}
+
+function renderComingBack(shown, now) {
+  const items = timeline(shown, now).slice(0, 8);
+  const label = (id) => PROVIDERS.find((p) => p.id === id)?.label ?? id;
+  const many = (id) => shown.filter((c) => c.provider === id).length > 1;
+  const rows = items
+    .map((i) => `<li title="${absolute(i.at)}"><span class="icon">${ICONS[i.provider]}</span><span><span class="plus">+${i.restore}%</span> ${esc(label(i.provider))} · ${esc(i.label.replace(/ limit$/i, ''))}${many(i.provider) ? `<small>${esc(maskEmail(i.name, i.email))}</small>` : ''}</span><span class="time">${short(i.at, now)}</span></li>`)
+    .join('');
+  return `<section class="surface side-card"><header><h2>Coming back</h2><span class="hint">quota restored at the next resets</span></header>
+    ${rows ? `<ul class="list">${rows}</ul>` : '<div class="muted">Nothing used yet, so no resets are pending.</div>'}</section>`;
+}
+
+const ALERT_KIND = {
+  below: ['var(--yellow)', 'Running low'], reset: ['var(--green)', 'Reset'], error: ['var(--red)', 'Error'], recovered: ['var(--green)', 'Recovered'],
+  runout: ['var(--yellow)', 'Running out'], login: ['var(--red)', 'Login'], traffic: ['var(--yellow)', 'Rate limited'],
+};
+function renderAlerts(count) {
+  const s = state.snap.settings;
+  const canAsk = 'Notification' in window && Notification.permission === 'default';
+  const denied = 'Notification' in window && Notification.permission === 'denied';
+  const list = [...state.alerts].reverse().slice(0, 8);
+  const rows = list.length
+    ? `<ul class="list">${list.map((e) => {
+        const [color, name] = ALERT_KIND[e.kind] || ['var(--text-3)', e.kind];
+        return `<li><span class="event-dot" style="background:${color}"></span><span>${esc(e.message || e.label || '')}<small>${esc(name)} · ${esc(credLabel(e.auth_index))} · ${ago(e.at)}${e.muted ? ' · muted' : ''}</small></span><button class="x-btn" data-dismiss="${esc(eventKey(e))}" title="Dismiss" aria-label="Dismiss">×</button></li>`;
+      }).join('')}</ul>`
+    : `<div class="muted">All quiet. A warning appears here when an account drops below ${s.alert_below_percent}%${s.alert_run_out ? ' or is about to run out before it resets' : ''}, a login expires, or a check fails.</div>`;
+  const sched = s.webhook_configured ? [
+    s.quiet_hours ? `Webhook quiet ${esc(s.quiet_hours)}${s.quiet_now ? ' <b>(quiet now)</b>' : ''}` : '',
+    s.digest_day !== 'off' ? `Weekly digest ${DAY_NAMES[s.digest_day]} ${pad(s.digest_hour)}:00${s.digest_at ? `, last sent ${ago(s.digest_at)}` : ''}` : '',
+  ].filter(Boolean).join(' · ') : '';
+  const buttons = [
+    canAsk ? '<button class="btn small" data-action="notify">Enable notifications</button>' : '',
+    denied ? '<span class="hint">Notifications are blocked in this browser.</span>' : '',
+    s.webhook_configured ? '<button class="btn small" data-action="webhook">Test webhook</button>' : '',
+    `<button class="btn small" data-action="digest">${state.digest ? 'Hide digest' : 'Preview digest'}</button>`,
+    s.webhook_configured ? '<button class="btn small" data-action="digest-send">Send digest now</button>' : '',
+    state.webhookNote ? `<span class="hint">${esc(state.webhookNote)}</span>` : '',
+  ].join('');
+  const clear = list.length ? '<button class="btn small" data-dismiss="*">Clear all</button>' : `<span class="pill dot ${count ? 'warn' : 'ok'}">${count ? `${count} running low` : 'All good'}</span>`;
+  return `<section class="surface side-card"><header><h2>Alerts</h2>${clear}</header>${rows}${sched ? `<div class="hint">${sched}</div>` : ''}<div class="btn-row">${buttons}</div>${state.digest ? `<pre class="snip">${esc(state.digest)}</pre>` : ''}</section>`;
+}
+
+// What was really left unused at each reset of a weekly or longer window (the server records it at the reset).
+function renderWaste(shown, now) {
+  if (!state.waste || !shown.some((c) => c.windows?.length)) return '';
+  const ids = new Set(shown.map((c) => c.auth_index));
+  const groups = new Map();
+  for (const e of state.waste) {
+    if (!ids.has(e.auth_index) || e.period_s < 86400) continue;
+    const k = `${e.auth_index}|${e.window}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(e);
+  }
+  const many = (id) => shown.filter((c) => c.provider === id).length > 1;
+  const pname = (id) => PROVIDERS.find((p) => p.id === id)?.label ?? id;
+  const lbl = (s) => s.replace(/ limit$/i, '');
+  const rows = [...groups.values()].map((evs) => {
+    const last = evs[evs.length - 1];
+    const c = credByIndex(last.auth_index);
+    const avg = evs.reduce((sum, e) => sum + e.unused, 0) / evs.length;
+    const bars = evs.slice(-8).map((e) => `<i style="height:${Math.max(4, e.unused)}%" title="${absolute(e.at)}: ${Math.round(e.unused)}% unused"></i>`).join('');
+    return `<li class="ws-row">${icon(last.provider)}<div class="ws-main"><div class="uf-title">${esc(pname(last.provider))} · ${esc(lbl(last.label))}${many(last.provider) && c ? `<small>${esc(maskEmail(c.name, c.email))}</small>` : ''}</div><div class="uf-sub">Last reset ${ago(last.at)}: <b>${Math.round(last.unused)}%</b> left unused · average ${Math.round(avg)}% over ${plural(evs.length, 'reset')}</div></div><div class="ws-bars" aria-label="unused share at the last resets">${bars}</div></li>`;
+  }).join('');
+  const next = shown.flatMap((c) => (c.disabled ? [] : c.windows).filter((w) => w.key !== 'credits' && w.reset_at > now && isLong(w, now)).map((w) => ({ c, w })))
+    .sort((a, b) => a.w.reset_at - b.w.reset_at)[0];
+  const empty = next
+    ? `Nothing recorded yet. The first weekly reset is ${esc(pname(next.c.provider))} ${esc(lbl(next.w.label))} ${short(next.w.reset_at, now)}; after each reset this shows how much was left unused.`
+    : 'Nothing recorded yet.';
+  return `<section class="surface uf"><header><h2>Lost at reset</h2><span class="hint">What was actually left unused when each weekly or monthly limit reset, last 8 weeks.</span></header>${rows ? `<ul class="uf-list">${rows}</ul>` : `<div class="muted">${empty}</div>`}</section>`;
+}
+
+function renderIntegrations() {
+  const base = `${location.origin}/v0/management/quota-ledger`;
+  const b = state.bar;
+  return `<section class="surface side-card"><header><h2>Status bar &amp; metrics</h2></header>
+    ${b ? `<div class="bar-preview ${esc(b.class)}" title="${esc(b.tooltip)}">${esc(b.text || '—')}</div>` : ''}
+    <div class="hint">Waybar <b>custom</b> module (JSON with text, tooltip, class), or <b>?format=text</b> for plain text:</div>
+    <pre class="snip">curl -s -H "Authorization: Bearer $KEY" ${esc(base)}/bar</pre>
+    <div class="hint">Prometheus scrape job:</div>
+    <pre class="snip">metrics_path: /v0/management/quota-ledger/metrics
+authorization: { credentials: $KEY }
+static_configs: [{ targets: ["${esc(location.host)}"] }]</pre></section>`;
+}
+
+function renderUsage() {
+  const u = state.usage;
+  const toggle = `<div class="seg-ctl">${[24, 168].map((h) => `<button class="${state.usageHours === h ? 'on' : ''}" data-usage="${h}">${h === 24 ? '24 hours' : '7 days'}</button>`).join('')}</div>`;
+  let table = '<div class="muted">Loading…</div>';
+  if (u && u.hours === state.usageHours) {
+    const groups = groupUsage(u.rows || []);
+    const cells = (t) => USAGE_FIELDS.map((f) => `<td class="n">${compact(t[f])}</td>`).join('');
+    const body = groups
+      .map((a) => {
+        const kids = a.kids
+          .map((c) => `<tr class="l1"><td>${esc(c.key)}</td>${cells(c.t)}</tr>${c.kids.map((m) => `<tr class="l2"><td>${esc(m.key)}</td>${cells(m.t)}</tr>`).join('')}`)
+          .join('');
+        return `<tr class="l0"><td>${esc(credLabel(a.key))}</td>${cells(a.t)}</tr>${kids}`;
+      })
+      .join('');
+    table = groups.length
+      ? `<div class="table-wrap"><table class="usage"><thead><tr><th>Account · client key · model</th><th class="n">Requests</th><th class="n">Failed</th><th class="n">Input</th><th class="n">Output</th><th class="n">Cache read</th><th class="n">Cache write</th></tr></thead><tbody>${body}</tbody></table></div>`
+      : '<div class="muted">No requests went through the proxy in this period.</div>';
+  }
+  return `<section class="surface usage-card"><div class="section-head"><div><h2>Who used what</h2><div class="hint">Requests per account, split by client key and model.</div></div>${toggle}</div>${table}</section>`;
+}
+
+function render() {
+  if (document.activeElement?.id === 'sort') { state.dirty = true; return; } // an open dropdown would close
+  state.dirty = false;
+  const app = document.getElementById('app');
+  const title = '<h1>Quota Ledger</h1>';
+  if (state.needKey) {
+    document.title = 'Quota Ledger';
+    app.innerHTML = `${title}<form class="login" id="login"><div><strong>Management key</strong></div>
+      <div class="muted">Enter the CLIProxyAPI management key. It is kept in this tab's session storage only.</div>
+      <input type="password" id="key" autocomplete="current-password" autofocus required>
+      <button class="btn primary" type="submit">Connect</button></form>`;
+    return;
+  }
+  if (!state.snap) {
+    app.innerHTML = `${title}<div class="empty" style="margin-top:24px">${state.loadError ? `<span class="err">${esc(state.loadError)}</span>` : 'Loading…'}</div>`;
+    return;
+  }
+  const y = window.scrollY;
+  const now = Date.now();
+  const { poller, settings } = state.snap;
+  const creds = state.snap.credentials;
+  const loaded = creds.filter((c) => c.status === 'ok').length;
+  const below = belowCount(creds, settings.alert_below_percent);
+  setTitle(below);
+  const counts = Object.fromEntries(PROVIDERS.map((p) => [p.id, creds.filter((c) => c.provider === p.id).length]));
+  const tabs = [{ id: 'all', label: 'All' }, ...PROVIDERS]
+    .map((t) => `<button class="tab ${state.tab === t.id ? 'active' : ''}" data-tab="${t.id}">${icon(t.id)}${esc(t.label)}<span class="count">${t.id === 'all' ? creds.length : counts[t.id]}</span></button>`)
+    .join('');
+  const shown = visibleCreds();
+  const providers = PROVIDERS.filter((p) => shown.some((c) => c.provider === p.id));
+  const overview = providers.length ? `<div class="overview">${providers.map((p) => renderCard(p, shown.filter((c) => c.provider === p.id), now)).join('')}</div>` : '';
+  const sort = `<select id="sort" aria-label="Order accounts">
+      <option value="ledger" ${state.sort === 'ledger' ? 'selected' : ''}>Default order</option>
+      <option value="lowest" ${state.sort === 'lowest' ? 'selected' : ''}>Lowest quota first</option>
+      <option value="reset" ${state.sort === 'reset' ? 'selected' : ''}>Soonest reset first</option>
+    </select>`;
+  const accounts = shown.length
+    ? `<section><div class="section-head"><h2>Accounts <span class="count">${shown.length}</span></h2>${sort}</div><div class="accounts">${shown.map((c) => renderAccount(c, now)).join('')}</div></section>`
+    : '';
+  const empty = creds.length
+    ? providers.length ? '' : '<div class="empty">No accounts for this provider.</div>'
+    : '<div class="empty">No Claude, Codex or OpenCode accounts yet. Add Claude/Codex via <strong>OAuth Login</strong>, or an OpenCode Go key as an OpenAI-compatible provider with base URL <code>https://opencode.ai/zen/go/v1</code>.</div>';
+  const polled = poller.running ? ' · checking…' : poller.last_run_at ? ` · checked ${ago(poller.last_run_at)}` : '';
+  const problems = (settings.problems || []).map((p) => ` · <span class="err">config ignored: ${esc(p)}</span>`).join('');
+  const errors = `${poller.error ? ` · <span class="err">poller: ${esc(poller.error)}</span>` : ''}${poller.webhook_error ? ` · <span class="err">${esc(poller.webhook_error)}</span>` : ''}${state.fetchError ? ` · <span class="err">state unavailable: ${esc(state.fetchError)}</span>` : ''}${problems}`;
+
+  app.innerHTML = `
+    <div class="head">
+      <div>${title}<div class="meta">${plural(creds.length, 'account')} · <span class="ok">${loaded} loaded</span>${polled}${errors}</div></div>
+      <div class="actions">
+        <button class="btn" data-action="emails">${state.showEmails ? 'Hide emails' : 'Show emails'}</button>
+        <button class="btn primary" data-action="refresh-all" ${state.refreshing ? 'disabled' : ''}><span class="${state.refreshing ? 'spin' : ''}" style="display:inline-flex">${ICONS.refresh}</span>Refresh</button>
+      </div>
+    </div>
+    <div class="bar-row"><div class="tabs">${tabs}</div></div>
+    <div class="layout">
+      <div class="main-col">${renderUseFirst(shown, now)}${renderWaste(shown, now)}${overview}${accounts}${empty}${renderUsage()}</div>
+      <aside class="side">${renderRouting()}${renderComingBack(shown, now)}${renderAlerts(below)}${renderIntegrations()}</aside>
+    </div>`;
+  window.scrollTo(0, y);
+}
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('button');
+  if (!el) return;
+  const act = el.dataset.action;
+  if (el.dataset.tab) { state.tab = el.dataset.tab; render(); }
+  else if (el.dataset.refresh) { const c = credByIndex(el.dataset.refresh); if (c) refreshOne(c); }
+  else if (el.dataset.reset) { const c = credByIndex(el.dataset.reset); if (c) useReset(c); }
+  else if (el.dataset.mute) { const c = credByIndex(el.dataset.mute); if (c) setMuted(c, !c.muted); }
+  else if (el.dataset.off) { const c = credByIndex(el.dataset.off); if (c) turnOff(c); }
+  else if (el.dataset.open) openCpamc(el.dataset.open);
+  else if (el.dataset.dismiss) dismiss(el.dataset.dismiss);
+  else if (el.dataset.usage) { state.usageHours = Number(el.dataset.usage); render(); loadUsage(); }
+  else if (act === 'emails') { state.showEmails = !state.showEmails; render(); }
+  else if (act === 'refresh-all') refreshAll();
+  else if (act === 'notify') Notification.requestPermission().then(render);
+  else if (act === 'webhook') {
+    mgmt(`${API}alerts/test`, {})
+      .then((r) => { state.webhookNote = r.ok ? 'Test sent.' : `Webhook failed: ${r.error || 'unknown error'}`; })
+      .catch((err) => { state.webhookNote = err.message; })
+      .finally(render);
+  } else if (act === 'digest') {
+    if (state.digest) { state.digest = ''; render(); }
+    else mgmt(`${API}digest`).then((r) => { state.digest = r.text; }).catch((err) => { state.webhookNote = err.message; }).finally(render);
+  } else if (act === 'digest-send') {
+    mgmt(`${API}digest`, {})
+      .then((r) => { state.webhookNote = r.ok ? 'Digest sent.' : `Digest failed: ${r.error || 'unknown error'}`; })
+      .catch((err) => { state.webhookNote = err.message; })
+      .finally(render);
+  }
+});
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'sort') return;
+  state.sort = e.target.value;
+  e.target.blur();
+  render();
+});
+document.addEventListener('focusout', (e) => {
+  if (e.target.id === 'sort' && state.dirty) render();
+});
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'login') return;
+  e.preventDefault();
+  state.key = document.getElementById('key').value.trim();
+  sessionStorage.setItem('quota-ledger:key', state.key);
+  state.needKey = false;
+  loadAll();
+});
+
+/* ---------- theme: follow CPAMC's data-theme on the parent document ---------- */
+
+function syncTheme() {
+  let theme = null;
+  try {
+    if (window.parent !== window) theme = window.parent.document.documentElement.getAttribute('data-theme');
+    else theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : null;
+  } catch { /* cross-origin parent */ }
+  if (theme) document.documentElement.setAttribute('data-theme', theme);
+  else document.documentElement.removeAttribute('data-theme');
+}
+syncTheme();
+if (window.parent !== window) document.documentElement.classList.add('embedded');
+try {
+  if (window.parent !== window) new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+} catch { /* cross-origin parent */ }
+
+state.key = sessionStorage.getItem('quota-ledger:key') || cpamcKey();
+if (state.key) loadAll();
+else requireKey();
+setInterval(tick, STATE_POLL_MS); // server polls upstream; we only re-read its state
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+setInterval(() => { if (!state.needKey && !document.hidden) render(); }, 60000); // keep "in N min" labels fresh
+</script>
+</body>
+</html>
