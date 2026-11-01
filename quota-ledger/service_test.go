@@ -154,7 +154,7 @@ func TestPollerEndToEnd(t *testing.T) {
 	if byID["claude:c2"]["status"] != "disabled" || byID["codex:x1"]["status"] != "ok" || byID["codex:x1"]["plan"] != "Plus" {
 		t.Errorf("c2/x1 = %v / %v", byID["claude:c2"], byID["codex:x1"])
 	}
-	if o := byID["opencode:o1"]; o["status"] != "error" || o["error"] != "No OpenCode Go subscription on this key" || o["name"] != "opencode-go · sk-op…1234" {
+	if o := byID["opencode:o1"]; o["status"] != "error" || o["error"] != "No OpenCode Go subscription on this key" || o["name"] != "opencode-go · test-…1234" {
 		t.Errorf("opencode = %v", o)
 	}
 	host.mu.Lock()
