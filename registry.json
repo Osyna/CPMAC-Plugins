@@ -26,7 +26,8 @@
             "size": 3115253
           }
         ]
-      }
+      },
+      "logo": "https://raw.githubusercontent.com/Osyna/CPMAC-Plugins/main/docs/images/quota-ledger-logo.svg"
     },
     {
       "id": "token-trim",
@@ -53,7 +54,8 @@
             "size": 2105208
           }
         ]
-      }
+      },
+      "logo": "https://raw.githubusercontent.com/Osyna/CPMAC-Plugins/main/docs/images/token-trim-logo.svg"
     }
   ]
 }
