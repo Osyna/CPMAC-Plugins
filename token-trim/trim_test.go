@@ -295,7 +295,7 @@ func TestCorpus(t *testing.T) {
 		}
 		for i := range before {
 			got, orig := after[i].text, before[i].text
-			cleaned, _ := clean(orig, textBits)
+			cleaned, _ := clean(orig, allowedTextBits(before[i], all.On))
 			if got != orig && got != cleaned && !strings.HasPrefix(got, "[token-trim: identical to the output of tool call") {
 				t.Errorf("%s: output %d became %q", name, i, got)
 			}
@@ -481,18 +481,15 @@ func TestBiggestOutputs(t *testing.T) {
 	}
 }
 
-func TestRegisterDeclaresPatcher(t *testing.T) {
-	req, _ := json.Marshal(map[string]any{"config_yaml": []byte("data_dir: " + t.TempDir() + "\nmode: apply\nrule_json: false\nskip_tools: [\" Read \", \"\"]\nprices: {claude-x: {input: 3}}\n")})
-	raw, err := handleMethod("plugin.register", req)
-	if err != nil {
-		t.Fatal(err)
+func TestSettingsPreserveOptOutsAndValidateArchiveLimits(t *testing.T) {
+	cfg, err := parseSettings([]byte("mode: apply\nrule_json: false\nskip_tools: [\" Read \", \"\"]\nprices: {claude-x: {input: 3}}\n"))
+	if err != nil || cfg.Mode != modeApply || cfg.JSON || !cfg.ANSI || fmt.Sprint(cfg.SkipTools) != "[Read]" || cfg.Prices["claude-x"].Input != 3 {
+		t.Fatalf("settings: %+v, %v", cfg, err)
 	}
-	defer svc.stop()
-	if !strings.Contains(string(raw), `"request_body_patcher_before":true`) || !strings.Contains(string(raw), `"usage_plugin":true`) || svc.cfg.Mode != modeApply || svc.cfg.JSON || !svc.cfg.ANSI {
-		t.Fatalf("register = %s cfg %+v", raw, svc.cfg)
-	}
-	if fmt.Sprint(svc.cfg.SkipTools) != "[Read]" || svc.cfg.Prices["claude-x"].Input != 3 {
-		t.Errorf("lists = %q prices = %v", svc.cfg.SkipTools, svc.cfg.Prices)
+	for _, invalid := range []string{"archive_max_bytes: 0", "history_budget_bytes: 4096", "history_recent_bytes: 400000", "output_limit_bytes: 100"} {
+		if _, err := parseSettings([]byte(invalid)); err == nil {
+			t.Fatalf("accepted unsafe limits: %s", invalid)
+		}
 	}
 }
 

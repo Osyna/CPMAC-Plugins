@@ -63,7 +63,7 @@ Reads the quotas of your Claude, Codex and OpenCode Go accounts and tells you wh
 
 ## Token Trim
 
-Shortens **tool outputs** in requests before they go upstream. It never touches your prompts, the model's replies, the system prompt, tool definitions, images or thinking blocks.
+Shortens **tool outputs** before they go upstream. Version 0.5 adds optional private archives, MCP retrieval and batched history archiving; these are off until configured. Ordinary trimming leaves prompts, system instructions, tool definitions, images and thinking blocks alone.
 
 <div align="center">
 <picture>
@@ -72,10 +72,11 @@ Shortens **tool outputs** in requests before they go upstream. It never touches 
 </picture>
 </div>
 
-- **Eight rules, all lossless except one that marks what it drops**: colour codes, progress bars, overstrike, control characters, JSON whitespace, JSON Lines, repeated lines and duplicate outputs. Each one has a switch.
-- **Safe for the prompt cache.** Every output goes out in exactly the form it was first sent in, so trimming never breaks a conversation that is already cached.
-- **Starts in `measure` mode.** It records what it would save and sends requests unchanged. Switch to `apply` when you like the numbers.
-- **Also shows** token use and cost at your own prices, cache hits and cache breaks, and reply speed per model.
+- **Thirteen rules:** terminal cleanup, JSON/JSON Lines minification, repeated and duplicate output reduction, recognised test/build/install folding, and lossless search/diagnostic grouping. Lossy folds mark what they omit; failures and protected source/patch output stay visible.
+- **Stable cached views:** apply-mode outputs retain their first-sent form. Optional history cuts intentionally rebuild the prefix in growth batches rather than changing its boundary every turn.
+- **Recoverable omissions:** an opt-in, caller/workspace-isolated archive stores originals before shortening. An authenticated MCP endpoint provides exact paginated reads and bounded keyword search; the Archive tab issues and revokes workspace tokens.
+- **Starts in `measure` mode.** Ordinary rule savings are estimated without changing request bodies. Archive integration is disabled by default; see the plugin README before enabling raw-content storage.
+- **Also shows** token use and cost at your own prices, cache hits and cache breaks, reply speed per model, and separate runtime archive byte counters.
 
 <div align="center">
 <picture>
@@ -90,6 +91,8 @@ Shortens **tool outputs** in requests before they go upstream. It never touches 
 <summary>All the details are in the plugin README</summary>
 
 [`token-trim/README.md`](token-trim/README.md) explains each rule, the cache pinning and every setting.
+
+Version 0.5 currently requires a source build. The store registry remains on the verified 0.4 artifact until the 0.5 release archive is published.
 
 </details>
 

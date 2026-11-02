@@ -158,11 +158,16 @@ const RULES = [
   { id: 'json', name: 'JSON whitespace', what: 'A tool output that is one pretty-printed JSON value is minified. Lossless.' },
   { id: 'jsonl', name: 'JSON Lines', what: 'Output where every line is one JSON value is minified line by line. Lossless.' },
   { id: 'dedupe', name: 'Duplicate outputs', what: 'A tool output identical to an earlier one in the conversation becomes a short reference to it.' },
+  { id: 'tests', name: 'Passing tests', what: 'Folds recognised successful test records. Failures, diagnostics and totals stay visible.' },
+  { id: 'build', name: 'Build progress', what: 'Folds recognised compiler progress. Unknown lines and diagnostics are kept.' },
+  { id: 'install', name: 'Install progress', what: 'Folds recognised download and installation progress, preserving warnings and errors.' },
+  { id: 'search', name: 'Search grouping', what: 'Groups recognised matches by file, retaining every match and line number.' },
+  { id: 'diagnostics', name: 'Diagnostic grouping', what: 'Groups recognised warnings and notes without dropping their messages.' },
 ];
 const FORMAT_NAMES = { claude: 'Claude Messages', openai: 'OpenAI Chat', 'openai-response': 'OpenAI Responses' };
-const TABS = [['overview', 'Overview'], ['trimming', 'Trimming'], ['cache', 'Cache'], ['speed', 'Speed'], ['settings', 'Settings']];
+const TABS = [['overview', 'Overview'], ['trimming', 'Trimming'], ['cache', 'Cache'], ['speed', 'Speed'], ['archive', 'Archive'], ['settings', 'Settings']];
 
-const state = { key: null, needKey: false, stats: null, error: '', days: 30, busy: '', preview: null, sample: '', tab: sessionStorage.getItem('token-trim:tab') || 'overview' };
+const state = { key: null, needKey: false, stats: null, error: '', days: 30, busy: '', preview: null, sample: '', archive: null, archiveToken: '', tab: sessionStorage.getItem('token-trim:tab') || 'overview' };
 
 /* ---------- helpers ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -227,6 +232,7 @@ function requireKey() {
 async function load() {
   try {
     state.stats = await mgmt(`${API}stats?days=${state.days}`);
+    if (state.tab === 'archive' && state.stats.settings.archive_enabled) state.archive = await mgmt(`${API}archive/namespaces`);
     state.error = '';
   } catch (err) {
     if (err instanceof AuthError) return requireKey();
@@ -480,7 +486,7 @@ function cacheTab(s, ctx) {
   const changed = s.last_config ? `Settings last changed ${ago(s.last_config)} (${when(s.last_config)}).` : 'Settings unchanged since the proxy started.';
   const breaks = `<section class="surface card"><header><h2>Cache breaks</h2><span class="hint">${esc(changed)} Watched for Anthropic models, the only ones that report cache writes.</span></header>${s.breaks?.length
     ? `<div class="table-wrap"><table><thead><tr><th>When</th><th>Model</th><th>Conversation</th><th class="n">Prompt before → now</th><th class="n">Read</th><th class="n">Written</th><th class="n">After</th><th>Token Trim</th></tr></thead><tbody>${s.breaks.map((b) => `<tr><td title="${esc(when(b.at))}">${esc(ago(b.at))}</td><td><span class="mono">${esc(b.model)}</span></td><td><span class="mono">${esc(b.session)}</span></td><td class="n">${compact(b.prev_prompt)} → ${compact(b.prompt)}</td><td class="n">${compact(b.cache_read)}</td><td class="n">${compact(b.cache_write)}</td><td class="n">${b.gap_s} s</td><td>${esc(b.mode)}</td></tr>`).join('')}</tbody></table></div>
-      <div class="hint">Something changed the start of these conversations: a new system prompt, a tool or MCP server added, a compaction the client did. Token Trim cannot cause it: outputs already sent always go out again exactly as before (see pinning).</div>`
+      <div class="hint">A changed system prompt, tool list or client compaction can rebuild the cache. Optional Token Trim history archiving also intentionally rewrites the prefix at fixed boundaries. Ordinary output pins keep their first-sent form.</div>`
     : '<div class="muted">None. Every conversation that came back within 5 minutes reused its cached history.</div>'}</section>`;
   const pins = `<section class="surface card"><header><h2>Pinning</h2></header>
     <div class="tiles"><div class="tile use"><span class="k">Pinned outputs</span><span class="v">${compact(s.pins)}<small>of ${compact(s.max_pins)}</small></span><span class="s">Each tool output keeps the form it was first sent in, whatever the mode or rules later.</span></div>
@@ -534,7 +540,7 @@ function settingsTab(s, ctx) {
     ${toolsSeen.length ? `<div class="hint">Seen: ${toolsSeen.map(esc).join(', ')}</div>` : ''}
     <label class="field">Models <input class="text" id="skip-models" value="${esc(s.settings.skip_models.join(', '))}" placeholder="claude-opus-*"></label>
     ${modelsSeen.length ? `<div class="hint">Seen: ${modelsSeen.map(esc).join(', ')}</div>` : ''}
-    <div class="row"><button class="btn primary small" data-action="save-skip" ${busy ? 'disabled' : ''}>Save</button><span class="hint">Their outputs are still counted, never changed. Per client key is not possible: the plugin only sees the request body.</span></div></section>`;
+    <div class="row"><button class="btn primary small" data-action="save-skip" ${busy ? 'disabled' : ''}>Save</button><span class="hint">These outputs are still counted. Archive integration also honours these opt-outs.</span></div></section>`;
   const configured = Object.entries(s.settings.prices || {}).sort(([a], [b]) => a.localeCompare(b));
   const unpriced = modelsSeen.filter((m) => !priceFor(m));
   const prices = `<section class="surface card"><header><h2>Prices</h2><span class="hint">$ per million tokens · used for cost and the value of trimmed tokens</span></header>
@@ -544,6 +550,41 @@ function settingsTab(s, ctx) {
     <span class="hint">Rows without any price are dropped. Subscriptions (Claude Max, ChatGPT, OpenCode Go) are not billed per token: the figures show what the same traffic would cost on the API.</span></div></section>`;
   const thresholds = `<section class="surface card"><header><h2>Thresholds</h2></header><div class="hint">Outputs under <b>${s.settings.min_output_chars}</b> characters are left alone; duplicates must be at least <b>${s.settings.dedupe_min_chars}</b> characters. Change them in CPAMC → Plugins → token-trim.</div></section>`;
   return { main: optOut + prices + thresholds };
+}
+
+function archiveTab(s, ctx) {
+  const enabled = s.settings.archive_enabled;
+  const setup = `<section class="surface card"><header><h2>Recoverable output and history</h2><span class="pill ${enabled ? 'ok' : 'off'}">${enabled ? 'Enabled' : 'Opt-in'}</span></header>
+    <p>Raw tool output and old conversation entries can contain secrets. Archives stay on this proxy, in private files, until an administrator removes them. They are not encrypted or automatically expired.</p>
+    <p>Recoverable shortening needs the host-authenticated caller, a matching workspace token in <span class="mono">X-Token-Trim-Archive-Token</span>, and both <span class="mono">token_trim_read</span> and <span class="mono">token_trim_search</span> advertised by the client. Put the same token in the MCP Authorization header. Without these, ordinary trimming continues.</p>
+    <div class="row"><button class="btn small" data-action="toggle-archive" ${ctx.busy ? 'disabled' : ''}>${enabled ? 'Disable archive integration' : 'Enable archive integration'}</button><button class="btn small" data-action="refresh-archive" ${ctx.busy || !enabled ? 'disabled' : ''}>Refresh callers</button></div>
+    <p class="hint">MCP listener: <span class="mono">${esc(s.settings.archive_listen)}</span>, route <span class="mono">/mcp</span>. Configure the address and publish the port before connecting a client. Use TLS for any non-local connection.</p>
+    <p class="hint">History budget ${compact(s.settings.history_budget_bytes)} bytes · recent target ${compact(s.settings.history_recent_bytes)} bytes · output preview threshold ${compact(s.settings.output_limit_bytes)} bytes · archive quota ${compact(s.settings.archive_max_bytes)} bytes. These are byte limits, not exact token counts.</p></section>`;
+  const spaces = state.archive?.namespaces || [];
+  const namespaces = enabled ? `<section class="surface card"><header><h2>Workspace access</h2></header>
+    <p class="hint">Send one API request first. Set X-Token-Trim-Workspace on API requests to separate projects; omission uses default. Each row is already isolated by the host-authenticated caller. Issue a token only for the workspace you intend to connect.</p>
+    ${spaces.length ? `<div class="table-wrap"><table><thead><tr><th>Workspace</th><th>Archive namespace</th><th>Access</th></tr></thead><tbody>${spaces.map((n) => `<tr><td>${esc(n.workspace)}</td><td class="mono">${esc(n.namespace)}</td><td><button class="btn small" data-action="issue-archive-token" data-namespace="${esc(n.namespace)}" ${ctx.busy ? 'disabled' : ''}>Issue MCP token</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="muted">No callers yet. Send an API request, then refresh.</div>'}
+    ${state.archiveToken ? `<label class="field">New bearer token — copy now; not stored in this browser<input class="text mono" id="archive-token" readonly value="${esc(state.archiveToken)}"></label><button class="btn small" data-action="hide-archive-token">Hide token</button>` : ''}
+    <label class="field">Revoke a bearer token<input class="text" type="password" id="archive-revoke" autocomplete="off" placeholder="Paste the token to revoke"></label><button class="btn small" data-action="revoke-archive-token" ${ctx.busy ? 'disabled' : ''}>Revoke token</button>
+    <p class="hint">Archive previews and history cuts are measured separately from ordinary trim estimates. Since the listener started: ${compact(state.archive?.requests || 0)} eligible requests, ${compact(state.archive?.output_bytes_removed || 0)} output bytes and ${compact(state.archive?.history_bytes_removed || 0)} history bytes removed. Retrieval requests add context and are not priced as savings here.</p></section>` : '';
+  return { main: setup + namespaces };
+}
+
+async function archiveAction(action, body) {
+  state.busy = 'Updating archive access';
+  state.error = '';
+  render();
+  try {
+    const result = await mgmt(`${API}archive/${action}`, body);
+    if (action === 'token') state.archiveToken = result.token;
+    else state.archiveToken = '';
+  } catch (err) {
+    if (err instanceof AuthError) return requireKey();
+    state.error = err.message;
+  } finally {
+    state.busy = '';
+    render();
+  }
 }
 
 function render() {
@@ -568,7 +609,7 @@ function render() {
     : mode === 'off' ? '<div class="banner off"><span><b>Off:</b> requests pass through untouched and nothing is measured. Consumption, speed and cache health are still recorded.</span></div>' : '';
   const tab = TABS.some(([id]) => id === state.tab) ? state.tab : 'overview';
   const tabs = `<div class="tabs" role="tablist">${TABS.map(([id, label]) => `<button role="tab" aria-selected="${id === tab}" data-tab="${id}">${label}</button>`).join('')}</div>`;
-  const view = { overview: overviewTab, trimming: trimmingTab, cache: cacheTab, speed: speedTab, settings: settingsTab }[tab](s, ctx);
+  const view = { overview: overviewTab, trimming: trimmingTab, cache: cacheTab, speed: speedTab, archive: archiveTab, settings: settingsTab }[tab](s, ctx);
 
   app.innerHTML = `
     <div class="head">
@@ -612,10 +653,11 @@ document.addEventListener('click', (e) => {
   if (!el || el.disabled) return;
   const action = el.dataset.action;
   if (el.dataset.tab) {
+    state.archiveToken = '';
     state.tab = el.dataset.tab;
     sessionStorage.setItem('token-trim:tab', state.tab);
     window.scrollTo(0, 0);
-    render();
+    if (state.tab === 'archive') load(); else render();
   } else if (el.dataset.mode) {
     const m = el.dataset.mode;
     if (m !== state.stats?.settings.mode) setConfig({ mode: m }, m === 'apply' ? 'Turning trimming on' : m === 'measure' ? 'Switching to measure' : 'Turning off');
@@ -625,6 +667,19 @@ document.addEventListener('click', (e) => {
   } else if (action === 'preview') {
     // state.sample, not the textarea's value: a textarea turns \r into \n, which hides progress-bar redraws.
     mgmt(`${API}preview`, { text: state.sample }).then((r) => { state.preview = r; }).catch((err) => { state.error = err.message; }).finally(render);
+  } else if (action === 'toggle-archive') {
+    state.archiveToken = '';
+    setConfig({ archive_enabled: !state.stats.settings.archive_enabled }, 'Updating archive integration');
+  } else if (action === 'refresh-archive') {
+    load();
+  } else if (action === 'issue-archive-token') {
+    archiveAction('token', { namespace: el.dataset.namespace });
+  } else if (action === 'hide-archive-token') {
+    state.archiveToken = '';
+    render();
+  } else if (action === 'revoke-archive-token') {
+    const token = document.getElementById('archive-revoke').value;
+    if (token) archiveAction('revoke', { token });
   } else if (action === 'example') {
     state.sample = EXAMPLE;
     state.preview = null;
@@ -676,7 +731,7 @@ state.key = sessionStorage.getItem('token-trim:key') || cpamcKey();
 if (state.key) load(); else requireKey();
 // Re-rendering replaces the page: skip it while typing (Try it box) and on the Settings tab, whose forms
 // would lose unsaved edits; actions there reload explicitly.
-setInterval(() => { if (!state.needKey && !document.hidden && !state.busy && state.tab !== 'settings' && document.activeElement?.id !== 'sample') load(); }, 5000);
+setInterval(() => { if (!state.needKey && !document.hidden && !state.busy && !['settings', 'archive'].includes(state.tab) && document.activeElement?.id !== 'sample') load(); }, 5000);
 </script>
 </body>
 </html>

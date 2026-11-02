@@ -44,8 +44,8 @@ import (
 	"unsafe"
 )
 
-// Mirrors sdk/pluginabi (ABIVersion, SchemaVersion) of CLIProxyAPI v8; schema 8 is the first with raw
-// request-body patching (request.patch_body_before). The ABI is JSON, so no SDK import.
+// Mirrors sdk/pluginabi's JSON contract. Native request interception supplies authenticated caller
+// scope; byte-range edits require schema 8. No SDK import is needed.
 const (
 	abiVersion    = 1
 	schemaVersion = 8
