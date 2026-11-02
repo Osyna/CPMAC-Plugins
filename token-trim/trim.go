@@ -17,31 +17,42 @@ import (
 // hitting. Nothing outside tool outputs is touched.
 
 const (
-	ruleANSI       = "ansi"
-	ruleProgress   = "progress"
-	ruleOverstrike = "overstrike"
-	ruleControl    = "control"
-	ruleRepeats    = "repeats"
-	ruleJSON       = "json"
-	ruleJSONL      = "jsonl"
-	ruleDedupe     = "dedupe"
-	repeatRun      = 12 // a run of similar lines is collapsed from this length on
-	repeatKeep     = 2  // lines kept at each end of a collapsed run
+	ruleANSI        = "ansi"
+	ruleProgress    = "progress"
+	ruleOverstrike  = "overstrike"
+	ruleControl     = "control"
+	ruleRepeats     = "repeats"
+	ruleJSON        = "json"
+	ruleJSONL       = "jsonl"
+	ruleDedupe      = "dedupe"
+	ruleTests       = "tests"
+	ruleBuild       = "build"
+	ruleInstall     = "install"
+	ruleSearch      = "search"
+	ruleDiagnostics = "diagnostics"
+	repeatRun       = 12 // a run of similar lines is collapsed from this length on
+	repeatKeep      = 2  // lines kept at each end of a collapsed run
 )
 
 // mask is a set of rules. The bit values are stored in cache pins (pins.bin): never renumber them.
 type mask uint16
 
 const (
-	bitANSI       mask = 1 << 0
-	bitProgress   mask = 1 << 1
-	bitRepeats    mask = 1 << 2
-	bitJSON       mask = 1 << 3
-	bitDedupe     mask = 1 << 4
-	bitOverstrike mask = 1 << 5
-	bitControl    mask = 1 << 6
-	bitJSONL      mask = 1 << 7
-	textBits           = bitANSI | bitProgress | bitOverstrike | bitControl | bitRepeats | bitJSON | bitJSONL
+	bitANSI        mask = 1 << 0
+	bitProgress    mask = 1 << 1
+	bitRepeats     mask = 1 << 2
+	bitJSON        mask = 1 << 3
+	bitDedupe      mask = 1 << 4
+	bitOverstrike  mask = 1 << 5
+	bitControl     mask = 1 << 6
+	bitJSONL       mask = 1 << 7
+	bitTests       mask = 1 << 8
+	bitBuild       mask = 1 << 9
+	bitInstall     mask = 1 << 10
+	bitSearch      mask = 1 << 11
+	bitDiagnostics mask = 1 << 12
+	foldBits            = bitTests | bitBuild | bitInstall | bitSearch | bitDiagnostics
+	textBits            = bitANSI | bitProgress | bitOverstrike | bitControl | bitRepeats | bitJSON | bitJSONL | foldBits
 )
 
 // textRules run in this order on one output; dedupe works across outputs and is applied in trim.
@@ -57,12 +68,19 @@ var textRules = []struct {
 	{ruleRepeats, bitRepeats, collapseRepeats},
 	{ruleJSON, bitJSON, compactJSON},
 	{ruleJSONL, bitJSONL, compactJSONLines},
+	{ruleTests, bitTests, foldTests},
+	{ruleBuild, bitBuild, foldBuild},
+	{ruleInstall, bitInstall, foldInstall},
+	{ruleSearch, bitSearch, foldSearch},
+	{ruleDiagnostics, bitDiagnostics, foldDiagnostics},
 }
 
-var ruleOrder = []string{ruleANSI, ruleProgress, ruleOverstrike, ruleControl, ruleRepeats, ruleJSON, ruleJSONL, ruleDedupe}
+var ruleOrder = []string{ruleANSI, ruleProgress, ruleOverstrike, ruleControl, ruleRepeats, ruleJSON, ruleJSONL,
+	ruleTests, ruleBuild, ruleInstall, ruleSearch, ruleDiagnostics, ruleDedupe}
 
 var ruleBits = map[string]mask{ruleANSI: bitANSI, ruleProgress: bitProgress, ruleOverstrike: bitOverstrike, ruleControl: bitControl,
-	ruleRepeats: bitRepeats, ruleJSON: bitJSON, ruleJSONL: bitJSONL, ruleDedupe: bitDedupe}
+	ruleRepeats: bitRepeats, ruleJSON: bitJSON, ruleJSONL: bitJSONL, ruleDedupe: bitDedupe,
+	ruleTests: bitTests, ruleBuild: bitBuild, ruleInstall: bitInstall, ruleSearch: bitSearch, ruleDiagnostics: bitDiagnostics}
 
 // patterns are names matched case-insensitively, exactly or by a prefix ending in "*".
 type patterns []string
@@ -278,6 +296,9 @@ func clean(s string, m mask) (string, map[string]int) {
 		if m&r.bit == 0 || (r.bit == bitRepeats && fileView(s)) {
 			continue
 		}
+		if r.bit == bitRepeats && m&foldBits != 0 && structuredFoldText(s) {
+			continue
+		}
 		if t := r.fn(s); len(t) < len(s) {
 			saved[r.name] += len(s) - len(t)
 			s = t
@@ -301,6 +322,8 @@ type target struct {
 	text       string // decoded value
 	id         string // tool call id, for duplicate references
 	tool       string // name of the tool that produced it, when the call is in the body
+	command    string // recognised shell command from the matching tool call
+	failed     bool   // explicit provider error metadata; never fold these outputs
 }
 
 type bodyDoc struct {
@@ -362,15 +385,20 @@ func locate(body []byte) (model, format string, targets []target, err error) {
 	}
 	paths := map[string]string{} // dotted path of a tool output string -> tool call id
 	names := map[string]string{} // tool call id -> tool name
+	commands := map[string]string{}
+	failed := map[string]bool{}
 	for i, raw := range doc.Messages {
 		var m struct {
 			Role       string          `json:"role"`
 			Content    json.RawMessage `json:"content"`
 			ToolCallID string          `json:"tool_call_id"`
+			IsError    bool            `json:"is_error"`
+			Status     string          `json:"status"`
 			ToolCalls  []struct {
 				ID       string `json:"id"`
 				Function struct {
-					Name string `json:"name"`
+					Name      string          `json:"name"`
+					Arguments json.RawMessage `json:"arguments"`
 				} `json:"function"`
 			} `json:"tool_calls"`
 		}
@@ -379,11 +407,13 @@ func locate(body []byte) (model, format string, targets []target, err error) {
 		}
 		for _, tc := range m.ToolCalls {
 			names[tc.ID] = tc.Function.Name
+			commands[tc.ID] = callCommand(tc.Function.Arguments)
 		}
 		base := "messages." + strconv.Itoa(i) + ".content"
 		if m.Role == "tool" {
 			format = "openai"
 			textPaths(m.Content, base, m.ToolCallID, claudeParts, paths)
+			failed[m.ToolCallID] = m.IsError || m.Status == "error" || m.Status == "failed"
 			continue
 		}
 		var blocks []struct {
@@ -392,6 +422,9 @@ func locate(body []byte) (model, format string, targets []target, err error) {
 			Name      string          `json:"name"`
 			ToolUseID string          `json:"tool_use_id"`
 			Content   json.RawMessage `json:"content"`
+			Input     json.RawMessage `json:"input"`
+			IsError   bool            `json:"is_error"`
+			Status    string          `json:"status"`
 		}
 		if c := bytes.TrimSpace(m.Content); len(c) == 0 || c[0] != '[' || json.Unmarshal(c, &blocks) != nil {
 			continue
@@ -400,27 +433,38 @@ func locate(body []byte) (model, format string, targets []target, err error) {
 			switch b.Type {
 			case "tool_use":
 				names[b.ID] = b.Name
+				commands[b.ID] = callCommand(b.Input)
 			case "tool_result":
 				format = "claude"
 				textPaths(b.Content, base+"."+strconv.Itoa(j)+".content", b.ToolUseID, claudeParts, paths)
+				failed[b.ToolUseID] = failed[b.ToolUseID] || b.IsError || b.Status == "error" || b.Status == "failed"
 			}
 		}
 	}
 	if in := bytes.TrimSpace(doc.Input); len(in) > 0 && in[0] == '[' {
 		var items []struct {
-			Type   string          `json:"type"`
-			CallID string          `json:"call_id"`
-			Name   string          `json:"name"`
-			Output json.RawMessage `json:"output"`
+			Type      string          `json:"type"`
+			CallID    string          `json:"call_id"`
+			Name      string          `json:"name"`
+			Output    json.RawMessage `json:"output"`
+			Arguments json.RawMessage `json:"arguments"`
+			Input     json.RawMessage `json:"input"`
+			IsError   bool            `json:"is_error"`
+			Status    string          `json:"status"`
 		}
 		if json.Unmarshal(in, &items) == nil {
 			for i, it := range items {
 				switch it.Type {
 				case "function_call", "custom_tool_call":
 					names[it.CallID] = it.Name
+					commands[it.CallID] = callCommand(it.Arguments)
+					if len(it.Arguments) == 0 {
+						commands[it.CallID] = callCommand(it.Input)
+					}
 				case "function_call_output", "custom_tool_call_output":
 					format = "openai-response"
 					textPaths(it.Output, "input."+strconv.Itoa(i)+".output", it.CallID, responseParts, paths)
+					failed[it.CallID] = failed[it.CallID] || it.IsError || it.Status == "error" || it.Status == "failed"
 				}
 			}
 		}
@@ -435,7 +479,7 @@ func locate(body []byte) (model, format string, targets []target, err error) {
 		}
 		var text string
 		if json.Unmarshal(body[start:end], &text) == nil {
-			targets = append(targets, target{start: start, end: end, text: text, id: id, tool: names[id]})
+			targets = append(targets, target{start: start, end: end, text: text, id: id, tool: names[id], command: commands[id], failed: failed[id]})
 		}
 	})
 	return doc.Model, format, targets, err
@@ -705,6 +749,7 @@ func trim(body []byte, r rules, c cleaner, pins pinStore) (result, error) {
 		}
 
 		skip := skipModel || r.SkipTools.match(t.tool)
+		allowed := allowedTextBits(t, r.On)
 		want := formRaw
 		switch {
 		case skip:
@@ -712,13 +757,13 @@ func trim(body []byte, r rules, c cleaner, pins pinStore) (result, error) {
 		case dup && r.On&bitDedupe != 0 && len(t.text) >= r.DedupeMin:
 			want = formDedupe
 		case len(t.text) >= r.MinChars:
-			want = form(r.On & textBits)
+			want = form(r.On & allowed)
 		}
 		wantOut, wantSaved := render(want)
 		wantN := max(len(t.text)-len(wantOut), 0)
 		res.Would += wantN
-		if !skip && want != formDedupe && len(t.text) >= r.MinChars && r.On&textBits != textBits {
-			_, all := c.clean(key, textBits, t.text)
+		if !skip && want != formDedupe && len(t.text) >= r.MinChars && r.On&allowed != allowed {
+			_, all := c.clean(key, allowed, t.text)
 			for name, n := range all {
 				if r.On&ruleBits[name] == 0 {
 					res.Shadow[name] += n

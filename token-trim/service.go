@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	version     = "0.4.0"
+	version     = "0.5.0"
 	modeOff     = "off"
 	modeMeasure = "measure" // compute and record savings, send requests unchanged
 	modeApply   = "apply"
@@ -52,26 +52,39 @@ type price struct {
 }
 
 type settings struct {
-	Mode        string           `yaml:"mode"`
-	ANSI        bool             `yaml:"rule_ansi"`
-	Progress    bool             `yaml:"rule_progress"`
-	Overstrike  bool             `yaml:"rule_overstrike"`
-	Control     bool             `yaml:"rule_control"`
-	Repeats     bool             `yaml:"rule_repeats"`
-	JSON        bool             `yaml:"rule_json"`
-	JSONL       bool             `yaml:"rule_jsonl"`
-	Dedupe      bool             `yaml:"rule_dedupe"`
-	MinChars    int              `yaml:"min_output_chars"`
-	DedupeMin   int              `yaml:"dedupe_min_chars"`
-	SkipTools   []string         `yaml:"skip_tools"`
-	SkipModels  []string         `yaml:"skip_models"`
-	Prices      map[string]price `yaml:"prices"`
-	DataDir     string           `yaml:"data_dir"`
-	HistoryDays int              `yaml:"history_days"`
+	Mode            string           `yaml:"mode"`
+	ANSI            bool             `yaml:"rule_ansi"`
+	Progress        bool             `yaml:"rule_progress"`
+	Overstrike      bool             `yaml:"rule_overstrike"`
+	Control         bool             `yaml:"rule_control"`
+	Repeats         bool             `yaml:"rule_repeats"`
+	JSON            bool             `yaml:"rule_json"`
+	JSONL           bool             `yaml:"rule_jsonl"`
+	Dedupe          bool             `yaml:"rule_dedupe"`
+	Tests           bool             `yaml:"rule_tests"`
+	Build           bool             `yaml:"rule_build"`
+	Install         bool             `yaml:"rule_install"`
+	Search          bool             `yaml:"rule_search"`
+	Diagnostics     bool             `yaml:"rule_diagnostics"`
+	ArchiveEnabled  bool             `yaml:"archive_enabled"`
+	ArchiveListen   string           `yaml:"archive_listen"`
+	ArchiveMaxBytes int64            `yaml:"archive_max_bytes"`
+	HistoryBudget   int              `yaml:"history_budget_bytes"`
+	HistoryRecent   int              `yaml:"history_recent_bytes"`
+	OutputLimit     int              `yaml:"output_limit_bytes"`
+	MinChars        int              `yaml:"min_output_chars"`
+	DedupeMin       int              `yaml:"dedupe_min_chars"`
+	SkipTools       []string         `yaml:"skip_tools"`
+	SkipModels      []string         `yaml:"skip_models"`
+	Prices          map[string]price `yaml:"prices"`
+	DataDir         string           `yaml:"data_dir"`
+	HistoryDays     int              `yaml:"history_days"`
 }
 
 func defaultSettings() settings {
 	return settings{Mode: modeMeasure, ANSI: true, Progress: true, Overstrike: true, Control: true, Repeats: true, JSON: true, JSONL: true, Dedupe: true,
+		Tests: true, Build: true, Install: true, Search: true, Diagnostics: true,
+		ArchiveListen: "127.0.0.1:8319", ArchiveMaxBytes: 1 << 30, HistoryBudget: 600000, HistoryRecent: 150000, OutputLimit: 24576,
 		MinChars: 200, DedupeMin: 2000, DataDir: "token-trim-data", HistoryDays: 90}
 }
 
@@ -94,6 +107,12 @@ func parseSettings(raw []byte) (settings, error) {
 		s.DataDir = defaultSettings().DataDir
 	}
 	s.SkipTools, s.SkipModels = names(s.SkipTools), names(s.SkipModels)
+	if s.ArchiveListen == "" {
+		s.ArchiveListen = defaultSettings().ArchiveListen
+	}
+	if s.ArchiveMaxBytes < 65536 || s.HistoryBudget < 8192 || s.HistoryRecent < 2048 || s.HistoryRecent > s.HistoryBudget/2 || s.OutputLimit < 1024 {
+		return s, fmt.Errorf("archive limits require max bytes >= 65536, history budget >= 8192, recent >= 2048 and <= half budget, output limit >= 1024")
+	}
 	return s, nil
 }
 
@@ -110,7 +129,8 @@ func names(list []string) []string {
 
 func (s settings) switches() map[string]bool {
 	return map[string]bool{ruleANSI: s.ANSI, ruleProgress: s.Progress, ruleOverstrike: s.Overstrike, ruleControl: s.Control,
-		ruleRepeats: s.Repeats, ruleJSON: s.JSON, ruleJSONL: s.JSONL, ruleDedupe: s.Dedupe}
+		ruleRepeats: s.Repeats, ruleJSON: s.JSON, ruleJSONL: s.JSONL, ruleDedupe: s.Dedupe,
+		ruleTests: s.Tests, ruleBuild: s.Build, ruleInstall: s.Install, ruleSearch: s.Search, ruleDiagnostics: s.Diagnostics}
 }
 
 func (s settings) rules() rules {
@@ -143,6 +163,17 @@ func configFields() []configField {
 		{Name: "rule_json", Type: "boolean", Default: d.JSON, Description: "Minify tool outputs that are one pretty-printed JSON value (lossless)."},
 		{Name: "rule_jsonl", Type: "boolean", Default: d.JSONL, Description: "Minify JSON Lines outputs one line at a time (lossless)."},
 		{Name: "rule_dedupe", Type: "boolean", Default: d.Dedupe, Description: "Replace a repeat of an earlier identical tool output with a reference to it."},
+		{Name: "rule_tests", Type: "boolean", Default: d.Tests, Description: "Fold recognised passing test lines; retain failures, diagnostics and totals."},
+		{Name: "rule_build", Type: "boolean", Default: d.Build, Description: "Fold recognised successful compiler progress, preserving diagnostics."},
+		{Name: "rule_install", Type: "boolean", Default: d.Install, Description: "Fold recognised package download/install progress."},
+		{Name: "rule_search", Type: "boolean", Default: d.Search, Description: "Group recognised search matches by path without dropping matches or line numbers."},
+		{Name: "rule_diagnostics", Type: "boolean", Default: d.Diagnostics, Description: "Group recognised diagnostics without dropping messages."},
+		{Name: "archive_enabled", Type: "boolean", Default: false, Description: "Opt into private archives and MCP retrieval. Requires authenticated CallerScope and advertised retrieval tools before shortening archived content."},
+		{Name: "archive_listen", Type: "string", Default: d.ArchiveListen, Description: "MCP listener address. Publish only over a trusted local network or TLS; bearer tokens grant access to one caller/workspace."},
+		{Name: "archive_max_bytes", Type: "integer", Default: d.ArchiveMaxBytes, Description: "Archive disk quota including durable views. Full storage leaves content unchanged; referenced entries are never auto-evicted."},
+		{Name: "history_budget_bytes", Type: "integer", Default: d.HistoryBudget, Description: "Archive complete old conversation groups when request bytes exceed this budget. Not an exact token limit."},
+		{Name: "history_recent_bytes", Type: "integer", Default: d.HistoryRecent, Description: "Recent conversation bytes targeted after a history cut; always retain the newest eight entries."},
+		{Name: "output_limit_bytes", Type: "integer", Default: d.OutputLimit, Description: "Large eligible tool outputs get a recoverable preview; file views, patches, errors and retrieval results are excluded."},
 		{Name: "min_output_chars", Type: "integer", Default: d.MinChars, Description: "Tool outputs shorter than this are left alone."},
 		{Name: "dedupe_min_chars", Type: "integer", Default: d.DedupeMin, Description: "Only duplicates at least this long are replaced (minimum 200)."},
 		{Name: "skip_tools", Type: "array", Default: []string{}, Description: `Tool names whose outputs are never trimmed, e.g. ["Read", "mcp__*"] (case-insensitive, * at the end = prefix).`},
@@ -484,6 +515,8 @@ type service struct {
 	stopCh     chan struct{}
 	live       [liveMinutes]minute // ring indexed by minute number
 	wg         sync.WaitGroup
+	contextMu  sync.Mutex
+	context    *contextService
 }
 
 type cached struct {
@@ -530,6 +563,9 @@ func (s *service) configure(cfg settings) {
 	s.stopCh = make(chan struct{})
 	s.wg.Add(1)
 	go s.flushLoop(s.stopCh)
+	if err := s.startContext(cfg); err != nil {
+		s.err = "archive unavailable: " + err.Error()
+	}
 }
 
 func appendPin(buf []byte, k [32]byte, f form) []byte {
@@ -585,6 +621,7 @@ func (s *service) pinned(k [32]byte) (form, bool) {
 }
 
 func (s *service) stop() {
+	s.stopContext()
 	s.mu.Lock()
 	ch := s.stopCh
 	s.stopCh = nil
@@ -965,13 +1002,19 @@ type dayView struct {
 }
 
 type settingsView struct {
-	Mode       string           `json:"mode"`
-	Rules      map[string]bool  `json:"rules"`
-	MinChars   int              `json:"min_output_chars"`
-	DedupeMin  int              `json:"dedupe_min_chars"`
-	SkipTools  []string         `json:"skip_tools"`
-	SkipModels []string         `json:"skip_models"`
-	Prices     map[string]price `json:"prices"`
+	Mode            string           `json:"mode"`
+	Rules           map[string]bool  `json:"rules"`
+	MinChars        int              `json:"min_output_chars"`
+	DedupeMin       int              `json:"dedupe_min_chars"`
+	SkipTools       []string         `json:"skip_tools"`
+	SkipModels      []string         `json:"skip_models"`
+	Prices          map[string]price `json:"prices"`
+	ArchiveEnabled  bool             `json:"archive_enabled"`
+	ArchiveListen   string           `json:"archive_listen"`
+	ArchiveMaxBytes int64            `json:"archive_max_bytes"`
+	HistoryBudget   int              `json:"history_budget_bytes"`
+	HistoryRecent   int              `json:"history_recent_bytes"`
+	OutputLimit     int              `json:"output_limit_bytes"`
 }
 
 func (s *service) stats(days int) statsView {
@@ -983,7 +1026,9 @@ func (s *service) stats(days int) statsView {
 		Total: newBucket(), Today: newBucket(), MonthUsage: map[string]*modelUse{}, Pins: len(s.pins), MaxPins: maxPins,
 		RateEdges: rateEdges[:], TTFTEdges: ttftEdges[:], PromptEdges: promptEdges[:],
 		Settings: settingsView{Mode: c.Mode, Rules: c.switches(), MinChars: c.MinChars, DedupeMin: c.DedupeMin,
-			SkipTools: append([]string{}, c.SkipTools...), SkipModels: append([]string{}, c.SkipModels...), Prices: map[string]price{}}}
+			SkipTools: append([]string{}, c.SkipTools...), SkipModels: append([]string{}, c.SkipModels...), Prices: map[string]price{},
+			ArchiveEnabled: c.ArchiveEnabled, ArchiveListen: c.ArchiveListen, ArchiveMaxBytes: c.ArchiveMaxBytes,
+			HistoryBudget: c.HistoryBudget, HistoryRecent: c.HistoryRecent, OutputLimit: c.OutputLimit}}
 	for k, p := range c.Prices {
 		v.Settings.Prices[k] = p
 	}
@@ -1070,6 +1115,9 @@ func (s *service) handleManagement(r managementRequest) obj {
 		return jsonResponse(http.StatusNotFound, obj{"error": "not found"})
 	}
 	route := r.Path[i+len("/token-trim/"):]
+	if strings.HasPrefix(route, "archive/") {
+		return s.manageArchive(route, r)
+	}
 	switch {
 	case route == "dashboard" && r.Method == http.MethodGet:
 		return obj{"StatusCode": 200, "Headers": map[string][]string{"Content-Type": {"text/html; charset=utf-8"}, "Cache-Control": {"no-store"}}, "Body": page}
@@ -1162,7 +1210,7 @@ func handleMethod(method string, req []byte) (out []byte, err error) {
 				"Logo":             logoURI,
 				"ConfigFields":     configFields(),
 			},
-			"capabilities": map[string]bool{"management_api": true, "request_body_patcher_before": true, "usage_plugin": true},
+			"capabilities": map[string]bool{"management_api": true, "request_interceptor": true, "request_interceptor_omit_body_after": true, "usage_plugin": true},
 		})
 	case "plugin.quiesce", "plugin.shutdown":
 		svc.stop()
@@ -1173,6 +1221,9 @@ func handleMethod(method string, req []byte) (out []byte, err error) {
 				{"Method": "GET", "Path": "token-trim/stats"},
 				{"Method": "POST", "Path": "token-trim/preview"},
 				{"Method": "POST", "Path": "token-trim/reset"},
+				{"Method": "GET", "Path": "token-trim/archive/namespaces"},
+				{"Method": "POST", "Path": "token-trim/archive/token"},
+				{"Method": "POST", "Path": "token-trim/archive/revoke"},
 			},
 			"resources": []map[string]string{{
 				"Path": "/dashboard", "Menu": "Token Trim",
@@ -1185,8 +1236,10 @@ func handleMethod(method string, req []byte) (out []byte, err error) {
 			return nil, err
 		}
 		return okEnvelope(svc.handleManagement(r))
-	case "request.patch_body_before":
-		return okEnvelope(svc.patch(req))
+	case "request.intercept_before":
+		return okEnvelope(svc.intercept(req))
+	case "request.intercept_after":
+		return okEnvelope(obj{})
 	case "usage.handle":
 		svc.usage(req)
 		return okEnvelope(obj{})
